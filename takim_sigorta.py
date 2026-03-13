@@ -21,8 +21,16 @@ KOMISYON_SOZLUGU = {
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-# Şirket listesini buraya istediğin gibi ekleyebilirsin
-SIRKET_LISTESI = ["Türkiye Sigorta", "Axa Sigorta", "Allianz", "Sompo Sigorta", "Anadolu Sigorta", "Quick Sigorta", "Bereket Sigorta", "Diğer"]
+# TÜRKİYE'DEKİ TÜM AKTİF SİGORTA ŞİRKETLERİ (Alfabetik)
+SIRKET_LISTESI = sorted([
+    "Aksigorta", "Allianz Sigorta", "Anadolu Sigorta", "Ankara Sigorta", "Arex Sigorta", 
+    "Atlas Mutuel Sigorta", "Axa Sigorta", "Bereket Sigorta", "Bupa Acıbadem Sigorta", 
+    "Chubb Sigorta", "Corpus Sigorta", "Doğa Sigorta", "Eureko Sigorta", "Generali Sigorta", 
+    "Güneş Sigorta", "HDI Sigorta", "Hepiyi Sigorta", "Koru Sigorta", "Magdeburger Sigorta", 
+    "Mapfre Sigorta", "Neova Katılım Sigorta", "Orient Sigorta", "Prive Sigorta", 
+    "Quick Sigorta", "Ray Sigorta", "Sompo Sigorta", "Şeker Sigorta", "Türk P&I Sigorta", 
+    "Türkiye Sigorta", "Unico Sigorta", "VHV Sigorta", "Ziraat Sigorta", "Zurich Sigorta"
+]) + ["Diğer"]
 
 # 1. OTURUM DURUMU
 if "authenticated" not in st.session_state:
@@ -93,7 +101,7 @@ if choice == "kaydet":
         tel = c2.text_input("📱 Telefon")
         
         c3, c4, c5 = st.columns(3)
-        sirket = c3.selectbox("🏢 Sigorta Şirketi", SIRKET_LISTESI) # YENİ ALAN
+        sirket = c3.selectbox("🏢 Sigorta Şirketi", SIRKET_LISTESI)
         brans = c4.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
         prim = c5.number_input("💰 Brüt Prim (TL)", min_value=0.0)
         
@@ -131,7 +139,9 @@ elif choice == "takip":
                 row = df.loc[idx]
                 with st.form("duzenleme_formu"):
                     u_musteri = st.text_input("Müşteri", value=str(row['musteri_adi']))
-                    u_sirket = st.selectbox("Şirket", SIRKET_LISTESI, index=SIRKET_LISTESI.index(row['sigorta_sirketi']) if 'sigorta_sirketi' in row and row['sigorta_sirketi'] in SIRKET_LISTESI else 0)
+                    # Mevcut şirketi bul ve seçili getir
+                    current_sirket_index = SIRKET_LISTESI.index(row['sigorta_sirketi']) if 'sigorta_sirketi' in row and row['sigorta_sirketi'] in SIRKET_LISTESI else 0
+                    u_sirket = st.selectbox("Şirket", SIRKET_LISTESI, index=current_sirket_index)
                     u_prim = st.number_input("Prim", value=float(row['brut_prim']))
                     c1, c2 = st.columns(2)
                     if c1.form_submit_button("💾 GÜNCELLE"):
@@ -156,12 +166,11 @@ elif choice == "takip":
                 "tanzim_tarihi": st.column_config.DateColumn("Tanzim", format="DD.MM.YYYY"),
                 "baslangic_tarihi": st.column_config.DateColumn("Başlangıç", format="DD.MM.YYYY"),
                 "bitis_tarihi": st.column_config.DateColumn("Vade Sonu", format="DD.MM.YYYY"),
-                "sigorta_sirketi": "Şirket",
                 "brut_prim": st.column_config.NumberColumn("Prim", format="%.2f TL")
             }
         )
 
-# Analiz sayfasında şirket bazlı raporlama
+# Analiz ve Vade takip bölümleri otomatik olarak bu listeyi kullanacak.
 elif choice == "rapor":
     st.subheader("📊 Finansal Analiz")
     if not df.empty:
