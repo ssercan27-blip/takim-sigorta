@@ -6,7 +6,7 @@ import os
 # Sayfa Ayarları
 st.set_page_config(page_title="Takim Sigorta - Komisyon Yönetimi", layout="centered")
 
-# --- GÜNCEL KOMİSYON ORANLARI (Gönderdiğin listeye göre) ---
+# --- GÜNCEL KOMİSYON ORANLARI ---
 KOMISYON_SOZLUGU = {
     "Trafik": 6.50,
     "Kasko": 9.50,
@@ -63,7 +63,7 @@ if check_password():
     try:
         df = conn.read(worksheet=selected_page, ttl=0)
     except:
-        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon'])
+        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'vade_tarihi'])
 
     if choice == "Poliçe Kaydet":
         st.header(f"📝 {selected_page} - Yeni Kayıt")
@@ -71,8 +71,8 @@ if check_password():
             musteri_adi = st.text_input("Müşteri Adı Soyadı")
             police_turu = st.selectbox("Branş / Poliçe Türü", list(KOMISYON_SOZLUGU.keys()))
             
-            # --- DIŞ ACENTE SEÇENEĞİ ---
-            kaynak = st.radio("Poliçe Kaynağı", ["Öz Portföy", "Dış Acente (Komisyon Yarıya Düşer)"])
+            # Seçeneklerdeki yazı temizlendi
+            kaynak = st.radio("Poliçe Kaynağı", ["Öz Portföy", "Dış Acente"])
             
             brut_prim = st.number_input("Brüt Prim (TL)", min_value=0.0, step=100.0)
             vade_tarihi = st.date_input("Vade Bitiş Tarihi")
@@ -81,13 +81,12 @@ if check_password():
             
             if submit:
                 if musteri_adi:
-                    # Temel Oranı Al
+                    # Arka planda oran hesabı
                     ana_oran = KOMISYON_SOZLUGU[police_turu]
                     
-                    # Eğer Dış Acente ise oranı yarıya böl
-                    uygulanan_oran = ana_oran / 2 if "Dış Acente" in kaynak else ana_oran
+                    # Kullanıcı görmese de kod burada "Dış Acente" kontrolü yapıyor
+                    uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
                     
-                    # Hesaplama
                     net_komisyon = brut_prim * (uygulanan_oran / 100)
                     
                     new_data = pd.DataFrame([{
@@ -109,13 +108,3 @@ if check_password():
     elif choice == "Finansal Rapor":
         st.header(f"🔍 {selected_page} Özeti")
         if not df.empty:
-            display_df = df if st.session_state.username in ["sercan", "admin"] else df[df['kayit_yapan'] == st.session_state.username]
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Toplam Brüt Prim", f"{display_df['brut_prim'].sum():,.2f} TL")
-            c2.metric("Toplam Net Komisyon", f"{display_df['net_komisyon'].sum():,.2f} TL")
-            
-            st.divider()
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("Henüz kayıt yok.")
