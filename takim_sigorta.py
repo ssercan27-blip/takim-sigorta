@@ -16,7 +16,7 @@ KOMISYON_SOZLUGU = {
     "TSS": 16.25,
     "Yol yardım": 16.25,
     "Mali Sorumluluk": 6.50,
-    "Diğer": 10.00  # Diğer seçeneği geri eklendi
+    "Diğer": 10.00
 }
 
 # 1. LOGO ALANI
@@ -79,5 +79,37 @@ if check_password():
             
             if submit:
                 if musteri_adi:
+                    # KOMİSYON HESABI (Hata Düzeltildi)
                     ana_oran = KOMISYON_SOZLUGU[police_turu]
-                    uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else
+                    uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
+                    net_komisyon = brut_prim * (uygulanan_oran / 100)
+                    
+                    new_data = pd.DataFrame([{
+                        "kayit_yapan": st.session_state.username,
+                        "musteri_adi": musteri_adi,
+                        "police_turu": police_turu,
+                        "kaynak": kaynak,
+                        "brut_prim": brut_prim,
+                        "oran": f"%{uygulanan_oran:.2f}",
+                        "net_komisyon": net_komisyon,
+                        "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d")
+                    }])
+                    
+                    updated_df = pd.concat([df, new_data], ignore_index=True)
+                    conn.update(worksheet=selected_page, data=updated_df)
+                    st.success(f"Başarıyla kaydedildi! Net Komisyon: {net_komisyon:,.2f} TL")
+                    st.balloons()
+                else:
+                    st.error("Lütfen müşteri adını giriniz.")
+
+    elif choice == "Finansal Rapor":
+        st.header(f"🔍 {selected_page} Özeti")
+        if not df.empty:
+            display_df = df if st.session_state.username in ["sercan", "admin"] else df[df['kayit_yapan'] == st.session_state.username]
+            c1, c2 = st.columns(2)
+            c1.metric("Toplam Brüt Prim", f"{display_df['brut_prim'].sum():,.2f} TL")
+            c2.metric("Toplam Net Komisyon", f"{display_df['net_komisyon'].sum():,.2f} TL")
+            st.divider()
+            st.dataframe(display_df, use_container_width=True)
+        else:
+            st.info("Bu sayfada henüz kayıt bulunmuyor.")
