@@ -118,4 +118,72 @@ if choice == "kaydet":
                     "telefon": tel
                 }])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
-                conn.update(worksheet
+                conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
+                st.success("Kayıt Başarılı!")
+                st.rerun()
+
+elif choice == "takip":
+    st.subheader("🔎 Poliçe Takibi ve Yönetimi")
+    
+    if not df.empty:
+        # DÜZENLEME / SİLME
+        with st.expander("🛠️ Kayıt Düzenle veya Sil", expanded=False):
+            secilen_no = st.selectbox("İşlem yapılacak Poliçe", ["Seçiniz..."] + sorted(df['police_no'].astype(str).unique().tolist()))
+            if secilen_no != "Seçiniz...":
+                idx = df[df['police_no'].astype(str) == secilen_no].index[0]
+                row = df.loc[idx]
+                
+                with st.form("duzenleme_formu"):
+                    u_musteri = st.text_input("Müşteri", value=str(row['musteri_adi']))
+                    u_prim = st.number_input("Prim", value=float(row['brut_prim']))
+                    # Başlangıç tarihini düzenleme için de ekledim
+                    u_basl = st.date_input("Başlangıç Tarihi", value=row['baslangic_tarihi'] if pd.notnull(row['baslangic_tarihi']) else datetime.now(), format="DD/MM/YYYY")
+                    
+                    c1, c2 = st.columns(2)
+                    if c1.form_submit_button("💾 GÜNCELLE"):
+                        df.at[idx, 'musteri_adi'] = u_musteri
+                        df.at[idx, 'brut_prim'] = u_prim
+                        df.at[idx, 'baslangic_tarihi'] = u_basl
+                        conn.update(worksheet=WORKSHEET_NAME, data=df)
+                        st.success("Güncellendi!")
+                        st.rerun()
+                    if c2.form_submit_button("🗑️ SİL"):
+                        new_df = df.drop(idx)
+                        conn.update(worksheet=WORKSHEET_NAME, data=new_df)
+                        st.success("Silindi!")
+                        st.rerun()
+
+        # LİSTELEME
+        search = st.text_input("🔍 Hızlı Ara")
+        f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)] if search else df
+        
+        st.dataframe(
+            f_df.sort_values('tanzim_tarihi', ascending=False),
+            use_container_width=True, hide_index=True,
+            column_config={
+                "tanzim_tarihi": st.column_config.DateColumn("Tanzim", format="DD.MM.YYYY"),
+                "baslangic_tarihi": st.column_config.DateColumn("Başlangıç", format="DD.MM.YYYY"),
+                "bitis_tarihi": st.column_config.DateColumn("Vade Sonu", format="DD.MM.YYYY"),
+                "brut_prim": st.column_config.NumberColumn("Prim", format="%.2f TL")
+            }
+        )
+
+# Analiz ve Vade bölümleri için de tarih/sütun kontrollerini korudum.
+elif choice == "rapor":
+    st.subheader("📊 Finansal Analiz")
+    if not df.empty:
+        m1, m2 = st.columns(2)
+        m1.metric("Toplam Prim", f"{df['brut_prim'].sum():,.2f} TL")
+        m2.metric("Toplam Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
+        fig = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı")
+        st.plotly_chart(fig, use_container_width=True)
+
+elif choice == "vade":
+    st.subheader("🔔 Vade Takip")
+    if not df.empty:
+        bugun = pd.Timestamp(datetime.now().date())
+        v_df = df.dropna(subset=['bitis_tarihi']).copy()
+        v_df['kalan'] = (v_df['bitis_tarihi'] - bugun).dt.days
+        yaklasan = v_df[v_df['kalan'] <= 30].sort_values('kalan')
+        if not yaklasan.empty:
+            st.dataframe(yaklasan[['police_no', 'musteri_adi', 'bitis_tarihi', 'kalan']], use_container_width=True, hide_index=True)
