@@ -170,4 +170,40 @@ elif choice == "rapor":
             fig1 = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.4)
             st.plotly_chart(fig1, use_container_width=True)
         with c2:
-            df['ay'] = df['tanzim
+            df['ay'] = df['tanzim_tarihi'].dt.strftime('%Y-%m')
+            aylik = df.groupby('ay')['net_komisyon'].sum().reset_index()
+            fig2 = px.line(aylik, x='ay', y='net_komisyon', title="Aylık Kazanç Trendi", markers=True)
+            st.plotly_chart(fig2, use_container_width=True)
+
+elif choice == "cari":
+    st.subheader("👤 Müşteri Detayları")
+    if not df.empty:
+        df['benzersiz_musteri'] = df['musteri_adi'].astype(str) + " - " + df['telefon'].astype(str)
+        secilen = st.selectbox("Müşteri Seçin", ["Seçiniz..."] + sorted(list(df['benzersiz_musteri'].unique())))
+        
+        if secilen != "Seçiniz...":
+            m_df = df[df['benzersiz_musteri'] == secilen]
+            st.info(f"**Müşteri:** {secilen} | **Poliçe Sayısı:** {len(m_df)}")
+            st.dataframe(m_df[['police_no', 'police_turu', 'brut_prim', 'tanzim_tarihi', 'bitis_tarihi']], use_container_width=True, hide_index=True)
+
+elif choice == "vade":
+    st.subheader("🔔 Vade Takip Merkezi")
+    if not df.empty:
+        bugun = pd.Timestamp(datetime.now().date())
+        df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
+        vade_df = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= -5)].sort_values('kalan_gun')
+        
+        if not vade_df.empty:
+            for _, row in vade_df.iterrows():
+                with st.container(border=True):
+                    col1, col2 = st.columns([3, 1])
+                    durum = "🔴" if row['kalan_gun'] < 0 else "🟠"
+                    col1.markdown(f"### {durum} {row['musteri_adi']}")
+                    col1.write(f"**Poliçe No:** {row['police_no']} | **Vade:** {row['bitis_tarihi'].strftime('%d.%m.%Y')}")
+                    
+                    tel = str(row['telefon']).strip()
+                    if not tel.startswith('90') and len(tel) > 0: tel = "90" + (tel[1:] if tel.startswith('0') else tel)
+                    msg = f"Sayın {row['musteri_adi']}, Takim Sigorta'dan hatırlatırız: {row['police_no']} nolu poliçe vadeniz dolmaktadır."
+                    wa_url = f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
+                    col2.link_button("💬 Hatırlat", wa_url, use_container_width=True)
+        else: st.success("Yakın zamanda vadesi dolacak poliçe yok.")
