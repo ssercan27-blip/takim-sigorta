@@ -1,16 +1,11 @@
-```python
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
-from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import plotly.express as px
 
-# -------------------------------
-# 1. LOGO VE SAYFA AYARLARI
-# -------------------------------
-
+# LOGO
 def get_logo():
     for ext in ["png","jpg","jpeg"]:
         if os.path.exists(f"logo.{ext}"):
@@ -25,10 +20,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# -------------------------------
-# 2. GOOGLE SHEETS BAĞLANTI
-# -------------------------------
-
+# GOOGLE SHEETS BAĞLANTI
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data_safe():
@@ -48,10 +40,7 @@ def load_data_safe():
     except:
         return pd.DataFrame()
 
-# -------------------------------
-# 3. GİRİŞ SİSTEMİ
-# -------------------------------
-
+# GİRİŞ SİSTEMİ
 if "authenticated" not in st.session_state:
     st.session_state.authenticated=False
     st.session_state.username=""
@@ -92,10 +81,7 @@ if not st.session_state.authenticated:
 
     st.stop()
 
-# -------------------------------
-# 4. ANA VERİ
-# -------------------------------
-
+# VERİYİ YÜKLE
 df = load_data_safe()
 
 if logo_file:
@@ -115,10 +101,7 @@ if st.session_state.role=="Admin":
 
 choice = st.sidebar.radio("İŞLEM MERKEZİ",menu_options)
 
-# -------------------------------
-# 5. YENİ POLİÇE EKLE
-# -------------------------------
-
+# YENİ POLİÇE
 if choice=="📝 Yeni Poliçe":
 
     st.subheader("📝 Yeni Poliçe Kaydı")
@@ -130,9 +113,7 @@ if choice=="📝 Yeni Poliçe":
         with c1:
 
             p_no = st.text_input("Poliçe No")
-
             m_adi = st.text_input("Müşteri Adı")
-
             sirket = st.text_input("Sigorta Şirketi")
 
             brans = st.selectbox(
@@ -141,19 +122,16 @@ if choice=="📝 Yeni Poliçe":
             )
 
             plaka = st.text_input("Plaka / TC")
-
             tel = st.text_input("Telefon")
 
         with c2:
 
             tanzim = st.date_input("Tanzim Tarihi")
-
             basla = st.date_input("Başlangıç Tarihi")
 
             is_two_months = st.checkbox("2 Aylık Poliçe")
 
             t_tutar = st.number_input("Toplam Tutar",0)
-
             a_ucret = st.number_input("Alınan Ücret",0)
 
         submit = st.form_submit_button("✅ SİSTEME KAYDET")
@@ -170,9 +148,9 @@ if choice=="📝 Yeni Poliçe":
                 "police_turu":brans,
                 "plaka_tc":plaka.upper(),
                 "telefon":tel,
-                "tanzim_tarihi":tanzim.strftime("%Y-%m-%d"),
-                "baslangic_tarihi":basla.strftime("%Y-%m-%d"),
-                "bitis_tarihi":bitis.strftime("%Y-%m-%d"),
+                "tanzim_tarihi":str(tanzim),
+                "baslangic_tarihi":str(basla),
+                "bitis_tarihi":str(bitis),
                 "toplam_tutar":t_tutar,
                 "alinan_ucret":a_ucret,
                 "arsiv":"FALSE",
@@ -185,13 +163,10 @@ if choice=="📝 Yeni Poliçe":
                 data=pd.concat([df,new_row],ignore_index=True)
             )
 
-            st.success(f"Kayıt eklendi. Vade: {bitis.strftime('%d.%m.%Y')}")
+            st.success(f"Kayıt eklendi. Vade: {bitis}")
             st.rerun()
 
-# -------------------------------
-# 6. POLİÇE TAKİBİ
-# -------------------------------
-
+# POLİÇE TAKİBİ
 elif choice=="🔎 Poliçe Takibi":
 
     st.subheader("🔎 Aktif Poliçeler")
@@ -217,7 +192,9 @@ elif choice=="🔎 Poliçe Takibi":
                     )
 
                     tel = str(row["telefon"])
-                    tel = tel[1:] if tel.startswith("0") else tel
+
+                    if tel.startswith("0"):
+                        tel = tel[1:]
 
                     wa = f"https://wa.me/90{tel}?text=Merhaba%20{row['musteri_adi']},%20poliçenizin%20vadesi%20{row['bitis_tarihi']}%20tarihinde%20dolacaktır."
 
@@ -226,10 +203,7 @@ elif choice=="🔎 Poliçe Takibi":
         else:
             st.info("Aktif poliçe bulunamadı")
 
-# -------------------------------
-# 7. CARİ TAKİP
-# -------------------------------
-
+# CARİ TAKİP
 elif choice=="💳 Ödeme & Cari":
 
     st.subheader("💳 Cari Takip")
@@ -249,10 +223,7 @@ elif choice=="💳 Ödeme & Cari":
             ]
         )
 
-# -------------------------------
-# 8. ANALİZ
-# -------------------------------
-
+# ANALİZ
 elif choice=="📊 Analiz":
 
     st.subheader("📊 Portföy Analizi")
@@ -264,28 +235,20 @@ elif choice=="📊 Analiz":
         c1,c2 = st.columns(2)
 
         fig1 = px.pie(df,names="sigorta_sirketi",title="Şirket Dağılımı")
-
         fig2 = px.bar(df,x="police_turu",y="toplam_tutar",title="Branş Ciro")
 
         c1.plotly_chart(fig1,use_container_width=True)
         c2.plotly_chart(fig2,use_container_width=True)
 
-# -------------------------------
-# 9. YÖNETİCİ PANELİ
-# -------------------------------
-
+# YÖNETİCİ PANELİ
 elif choice=="🔐 Yönetici Paneli":
 
     st.subheader("🔐 Yönetici Paneli")
 
     st.dataframe(df)
 
-# -------------------------------
-# 10. ÇIKIŞ
-# -------------------------------
-
+# ÇIKIŞ
 if st.sidebar.button("🔴 Çıkış"):
 
     st.session_state.clear()
     st.rerun()
-```
