@@ -98,13 +98,10 @@ if choice == "kaydet":
         tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now())
         baslangic = t2.date_input("🚀 Başlangıç Tarihi", datetime.now())
         
-        # SÜRE SEÇİMİ VE OTOMATİK HESAPLAMA
+        # SADELEŞTİRİLMİŞ SÜRE SEÇİMİ
         sure_secenekleri = {
             "1 Yıllık": relativedelta(years=1),
-            "6 Aylık": relativedelta(months=6),
-            "3 Aylık": relativedelta(months=3),
-            "2 Aylık": relativedelta(months=2),
-            "1 Aylık": relativedelta(months=1)
+            "2 Aylık": relativedelta(months=2)
         }
         sure_etiket = t3.selectbox("⏳ Poliçe Süresi", list(sure_secenekleri.keys()))
         
@@ -135,10 +132,10 @@ if choice == "kaydet":
                 
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(worksheet=selected_page, data=updated_df)
-                st.success(f"Poliçe {p_no} kaydedildi. Bitiş: {bitis_tarihi.strftime('%d.%m.%Y')}")
+                st.success(f"Poliçe {p_no} başarıyla kaydedildi.")
                 st.balloons()
             else:
-                st.error("⚠️ Lütfen zorunlu alanları (No, İsim, Tel, Prim) doldurun.")
+                st.error("⚠️ Lütfen zorunlu alanları doldurun.")
 
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takip ve Arama")
