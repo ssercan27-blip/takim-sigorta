@@ -1,10 +1,3 @@
-Sercan, bu hata genellikle kopyalarken son birkaç satırın veya bir parantezin eksik kalmasından kaynaklanır. Python "bir parantez veya süslü parantez açtın ama kapatmadın" diyor.
-
-Senin için tüm kodu baştan sona taradım, parantezleri ve tırnakları tek tek kontrol ettim. Bu sefer hiçbir eksik kalmayacak şekilde tam metni aşağıya bırakıyorum.
-
-Lütfen GitHub'daki takim_sigorta.py dosyasının içindeki her şeyi tamamen sil ve bu kodun en başından en sonuna kadar tamamını kopyalayıp yapıştır:
-
-Python
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -134,7 +127,7 @@ if choice == "kaydet":
                 st.error("HATA: Poliçe No ve Müşteri Adı boş bırakılamaz!")
 
 elif choice == "takip":
-    st.subheader("🔎 Poliçe Takip ve Arama")
+    st.subheader("🔎 Poliçe Takib ve Arama")
     if not df.empty:
         with st.expander("🔍 Arama Filtreleri", expanded=True):
             f1, f2, f3 = st.columns(3)
