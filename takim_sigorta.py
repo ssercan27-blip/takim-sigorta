@@ -8,88 +8,87 @@ from dateutil.relativedelta import relativedelta
 # --- 1. AYARLAR ---
 st.set_page_config(page_title="Takim Sigorta | Yönetim Paneli", layout="wide")
 
-# --- 2. LOGO GETİRME FONKSİYONU ---
-def get_main_logo():
-    # Klasördeki logoyu arar
+# --- 2. LOGO FONKSİYONU ---
+def get_logo():
     for ext in ["jpg", "png", "jpeg"]:
-        if os.path.exists(f"logo.{ext}"):
-            return f"logo.{ext}"
+        if os.path.exists(f"logo.{ext}"): return f"logo.{ext}"
     return None
 
 # --- 3. VERİ BAĞLANTISI ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def load_data_secure():
+def load_data():
     try:
         raw_df = conn.read(worksheet="Sayfa1", ttl=0)
         if raw_df is None or raw_df.empty:
-            cols = ['müşteri_adı', 'poliçe_türü', 'araç_plakası/tc', 'başlangıç_tarihi', 'bitiş_tarihi', 'telefon', 'referans', 'arsiv']
-            return pd.DataFrame(columns=cols)
-        # Sütunları küçük harf ve alt çizgiye çevirerek hata payını yok et
+            return pd.DataFrame(columns=['müşteri_adı', 'poliçe_türü', 'araç_plakası/tc', 'başlangıç_tarihi', 'bitiş_tarihi', 'telefon', 'referans', 'arsiv'])
+        # Sütun isimlerini normalize et (Hata önleyici)
         raw_df.columns = [str(c).strip().lower().replace(" ", "_").replace("/", "_") for c in raw_df.columns]
         return raw_df
     except:
         return pd.DataFrame()
 
-# --- 4. GİRİŞ EKRANI (LOGO BURAYA GERİ GELDİ) ---
+# --- 4. GİRİŞ KONTROLÜ (LOGO VE MODERN GİRİŞ) ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-    # Sayfayı ortalamak için boş sütunlar kullanıyoruz
-    left_co, cent_co, last_co = st.columns([1, 1.2, 1])
-    with cent_co:
-        logo_path = get_main_logo()
-        if logo_path:
-            st.image(logo_path, use_container_width=True)
-        else:
-            st.markdown("<h1 style='text-align: center;'>🛡️</h1>", unsafe_allow_html=True)
-            
-        st.markdown("<h2 style='text-align: center;'>Takim Sigorta Giriş</h2>", unsafe_allow_html=True)
-        
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
+        logo = get_logo()
+        if logo: st.image(logo, use_container_width=True)
+        st.markdown("<h3 style='text-align: center;'>🛡️ Takim Sigorta Yönetim Paneli</h3>", unsafe_allow_html=True)
         u = st.text_input("Kullanıcı Adı").lower()
         p = st.text_input("Şifre", type="password")
-        
         if st.button("SİSTEME GİRİŞ", use_container_width=True):
             if u == "sercan" and p == "takim2026":
                 st.session_state.authenticated = True
+                st.session_state.username = u
                 st.rerun()
-            else:
-                st.error("Giriş bilgileri hatalı!")
+            else: st.error("Bilgiler hatalı!")
     st.stop()
 
-# --- 5. ANA SİSTEM ---
-df = load_data_secure()
+# --- 5. ANA PROGRAM ---
+df = load_data()
 
-# Sidebar (Yan Menü)
-logo_path = get_main_logo()
-if logo_path:
-    st.sidebar.image(logo_path, use_container_width=True)
+# Kenar Menüsü
+logo_side = get_logo()
+if logo_side: st.sidebar.image(logo_side, use_container_width=True)
+st.sidebar.markdown(f"**Yetkili:** {st.session_state.username.upper()}")
 
-menu = st.sidebar.radio("İŞLEM MERKEZİ", ["📝 Yeni Poliçe", "🔎 Poliçe Takibi"])
+# İŞLEM MERKEZİ (Tam Liste)
+menu_options = {
+    "📝 Yeni Poliçe": "yeni",
+    "🔎 Poliçe Takibi": "takip",
+    "📊 Analiz": "analiz",
+    "🔔 Vade Takip": "vade"
+}
+choice = menu_options[st.sidebar.radio("İşlem Merkezi", list(menu_options.keys()))]
 
-if st.sidebar.button("🔴 Çıkış"):
+if st.sidebar.button("🔴 Güvenli Çıkış"):
     st.session_state.authenticated = False
     st.rerun()
 
-# --- SAYFA İÇERİKLERİ ---
-if menu == "📝 Yeni Poliçe":
-    st.markdown("### 📝 Yeni Poliçe Kaydı")
-    # Form içeriği Excel'indeki alanlara (Plaka, Referans vb.) göre hazır
-    with st.form("yeni_kayit"):
-        c1, c2 = st.columns(2)
-        m_adi = c1.text_input("Müşteri Ad Soyad")
-        p_turu = c2.selectbox("Poliçe Türü", ["TRAFİK", "KASKO", "DASK", "KONUT", "TSS", "DİĞER"])
+# --- 6. SAYFA İÇERİKLERİ ---
+
+if choice == "yeni":
+    st.subheader("📝 Yeni Poliçe Kayıt (Excel Formatlı)")
+    with st.form("yeni_police_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        m_adi = col1.text_input("Müşteri Ad Soyad")
+        p_turu = col2.selectbox("Poliçe Türü", ["TRAFİK", "KASKO", "DASK", "TSS", "KONUT", "DİĞER"])
         
-        c3, c4 = st.columns(2)
-        plaka = c3.text_input("Araç Plakası / TC")
-        tel = c4.text_input("Telefon Numarası")
+        col3, col4 = st.columns(2)
+        plaka = col3.text_input("Araç Plakası / TC")
+        tel = col4.text_input("Telefon (WhatsApp için)")
         
-        c5, c6 = st.columns(2)
-        basla = c5.date_input("Başlangıç Tarihi", datetime.now())
-        ref = c6.text_input("Referans")
+        col5, col6 = st.columns(2)
+        basla = col5.date_input("Başlangıç Tarihi", datetime.now())
+        ref = col6.text_input("Referans")
         
-        if st.form_submit_button("✅ KAYDET", use_container_width=True):
+        notlar = st.text_area("Poliçe Notu")
+        
+        if st.form_submit_button("✅ POLİÇEYİ SİSTEME KAYDET", use_container_width=True):
             if m_adi and tel:
                 bitis = basla + relativedelta(years=1)
                 new_row = pd.DataFrame([{
@@ -100,17 +99,25 @@ if menu == "📝 Yeni Poliçe":
                     "bitiş_tarihi": bitis.strftime("%d.%m.%Y"),
                     "telefon": tel,
                     "referans": ref,
+                    "notlar": notlar,
                     "arsiv": False
                 }])
                 conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
-                st.success("Kayıt başarıyla Google Sheets'e eklendi!")
-            else:
-                st.warning("Eksik bilgi bırakmayın!")
+                st.success(f"Başarılı! {m_adi.upper()} sisteme eklendi.")
+            else: st.warning("Lütfen zorunlu alanları (İsim ve Telefon) doldurun!")
 
-elif menu == "🔎 Poliçe Takibi":
-    st.subheader("🔎 Aktif Kayıtlar")
+elif choice == "takip":
+    st.subheader("🔎 Poliçe Takibi")
     if not df.empty:
-        # Sadece aktifleri göster
-        st.dataframe(df[df['arsiv'] != True], use_container_width=True)
-    else:
-        st.info("Henüz kayıt bulunmuyor.")
+        # Sadece arşive gitmemişleri gösteriyoruz
+        active_df = df[df['arsiv'] != True].copy()
+        st.dataframe(active_df, use_container_width=True)
+    else: st.info("Gösterilecek aktif kayıt bulunmuyor.")
+
+elif choice == "analiz":
+    st.subheader("📊 Analiz")
+    st.info("Kayıtlar biriktikçe finansal tablolarınız burada görünecek.")
+
+elif choice == "vade":
+    st.subheader("🔔 Vade Takip")
+    st.info("Vadesi yaklaşan poliçeler burada listelenecek.")
