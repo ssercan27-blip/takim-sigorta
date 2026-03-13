@@ -91,7 +91,7 @@ if choice == "📝 Yeni Poliçe":
         a_ucret = c9.number_input("Alınan Ücret (TL)", min_value=0.0)
         tel = st.text_input("WhatsApp (5xxxxxxxxx)")
         
-        if st.form_submit_button("✅ SİSTEME KAYDET"):
+       if st.form_submit_button("✅ SİSTEME KAYDET"):
             # Tik işaretliyse 2 ay, değilse 1 yıl ekle
             if is_two_months:
                 bitis = basla + relativedelta(months=2)
@@ -113,6 +113,8 @@ if choice == "📝 Yeni Poliçe":
                 "arsiv": "FALSE", # Bu hep büyük harf "FALSE" kalsın
                 "kayıt_yapan": st.session_state.username
             }])
+            conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
+            st.success("Kayıt Başarılı!"); st.rerun()
             conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
             st.success("Kayıt Başarılı!"); st.rerun()
             
@@ -167,4 +169,5 @@ elif choice == "🔐 Yönetici Paneli":
 
 if st.sidebar.button("🔴 Çıkış"):
     st.session_state.clear(); st.rerun()
+
 
