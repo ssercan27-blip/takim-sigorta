@@ -165,3 +165,4 @@ if st.sidebar.button("🔴 Çıkış"):
     st.session_state.clear(); st.rerun()
 
 
+
