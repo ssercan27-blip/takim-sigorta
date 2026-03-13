@@ -20,10 +20,14 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data_safe():
     try:
-        # ... içerideki kodlar ...
+        df = conn.read(worksheet="Sayfa1", ttl=0)
+        if df is None or df.empty: return pd.DataFrame()
+        # Sütun isimlerini tertemiz yap (Boşlukları siler, küçük harf yapar)
+        df.columns = [str(c).strip().lower().replace(" ", "_").replace("/", "_") for c in df.columns]
+        # Arşiv sütununu garantiye al (FALSE/TRUE karmaşasını bitirir)
+        if 'arsiv' in df.columns:
+            df['arsiv'] = df['arsiv'].astype(str).str.strip().str.upper()
         return df
-    except:
-        return pd.DataFrame()
     except:
         return pd.DataFrame()
 
