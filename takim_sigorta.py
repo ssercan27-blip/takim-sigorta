@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timedelta
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Vade Takip Sistemi", layout="wide")
+st.set_page_config(page_title="Takim Sigorta - Yönetim Paneli", layout="wide")
 
 # --- KOMİSYON ORANLARI ---
 KOMISYON_SOZLUGU = {
@@ -13,7 +13,7 @@ KOMISYON_SOZLUGU = {
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-# 1. LOGO VE GİRİŞ (Hızlı Geçiş)
+# 1. LOGO VE SIDEBAR
 if os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
 else:
@@ -43,16 +43,15 @@ def check_password():
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # --- İŞLEM MERKEZİ ---
     st.sidebar.divider()
     st.sidebar.markdown(f"👤 Yetkili: **{st.session_state.username.upper()}**")
     
     page_map = {"Ana Portföy": "Sayfa1", "Ek Kayıtlar": "Sayfa2", "Arşiv": "Sayfa3"}
-    selected_display_name = st.sidebar.selectbox("Çalışma Alanı", list(page_map.keys()))
+    selected_display_name = st.sidebar.selectbox("📂 Çalışma Alanı", list(page_map.keys()))
     selected_page = page_map[selected_display_name]
     
-    menu = {"➕ Poliçe Kaydet": "kaydet", "📊 Finansal Rapor & Vade": "rapor"}
-    choice = menu[st.sidebar.radio("Menü", list(menu.keys()))]
+    menu = {"➕ Poliçe Kaydet": "kaydet", "📊 Finansal Rapor & Arama": "rapor"}
+    choice = menu[st.sidebar.radio("⚙️ Menü", list(menu.keys()))]
     
     if st.sidebar.button("🔴 Güvenli Çıkış", use_container_width=True):
         st.session_state.authenticated = False
@@ -61,7 +60,6 @@ if check_password():
     # --- VERİ OKUMA ---
     try:
         df = conn.read(worksheet=selected_page, ttl=0)
-        # Tarih sütunlarını datetime formatına çevir
         df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'])
         df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'])
         df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'])
@@ -86,9 +84,7 @@ if check_password():
             with t2:
                 baslangic = st.date_input("🚀 Başlangıç", value=datetime.now())
             with t3:
-                # Otomatik 1 yıl sonrası bitiş tarihi
-                varsayilan_bitis = baslangic + timedelta(days=365)
-                bitis = st.date_input("🏁 Bitiş (Vade)", value=varsayilan_bitis)
+                bitis = st.date_input("🏁 Bitiş (Vade)", value=baslangic + timedelta(days=365))
             
             if st.form_submit_button("✅ HESAPLA VE KAYDET", use_container_width=True):
                 if musteri_adi:
@@ -111,25 +107,29 @@ if check_password():
                     st.balloons()
 
     elif choice == "rapor":
-        st.markdown(f"### 📊 {selected_display_name} / Durum Analizi")
+        st.markdown(f"### 📊 {selected_display_name} / Veri Analizi ve Arama")
         
         if not df.empty:
-            # --- VADE TAKİP ALANI ---
-            bugun = pd.Timestamp(datetime.now().date())
-            df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
+            # --- FİLTRELEME ALANI ---
+            with st.expander("🔍 Gelişmiş Filtreleme Seçenekleri", expanded=False):
+                f1, f2, f3 = st.columns(3)
+                search_term = f1.text_input("Müşteri Ara", placeholder="İsim yazın...")
+                filter_branch = f2.multiselect("Branş Filtrele", options=df['police_turu'].unique())
+                filter_source = f3.multiselect("Kaynak Filtrele", options=df['kaynak'].unique())
             
-            vadesi_yaklasanlar = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= 0)]
-            
-            if not vadesi_yaklasanlar.empty:
-                st.warning(f"⚠️ Dikkat: Önümüzdeki 30 gün içinde süresi dolacak {len(vadesi_yaklasanlar)} adet poliçe var!")
-                st.dataframe(vadesi_yaklasanlar[['musteri_adi', 'police_turu', 'bitis_tarihi', 'kalan_gun']], use_container_width=True)
-                st.divider()
+            # Filtreleri Uygula
+            filtered_df = df.copy()
+            if search_term:
+                filtered_df = filtered_df[filtered_df['musteri_adi'].str.contains(search_term, case=False, na=False)]
+            if filter_branch:
+                filtered_df = filtered_df[filtered_df['police_turu'].isin(filter_branch)]
+            if filter_source:
+                filtered_df = filtered_df[filtered_df['kaynak'].isin(filter_source)]
 
-            # Özet Metrikler
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Toplam Ciro", f"{df['brut_prim'].sum():,.2f} TL")
-            m2.metric("Net Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
-            m3.metric("Poliçe Sayısı", len(df))
+            # Vade Uyarıları (Filtrelenmiş Veri Üzerinden)
+            bugun = pd.Timestamp(datetime.now().date())
+            filtered_df['kalan_gun'] = (filtered_df['bitis_tarihi'] - bugun).dt.days
+            yaklasanlar = filtered_df[(filtered_df['kalan_gun'] <= 30) & (filtered_df['kalan_gun'] >= 0)]
             
-            st.divider()
-            st.dataframe(df, use_container_width=True)
+            if not yaklasanlar.empty:
+                st.warning(f"🔔 Filtrelenen kayıtlarda v
