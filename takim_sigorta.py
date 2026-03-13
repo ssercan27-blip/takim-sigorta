@@ -67,12 +67,15 @@ if st.sidebar.button("🔴 Çıkış Yap"):
 # VERİ OKUMA VE ÖN HAZIRLIK
 try:
     df = conn.read(worksheet=selected_page, ttl=0)
-    if 'police_no' not in df.columns:
-        df['police_no'] = ""
     
+    # EKSİK SÜTUN KONTROLÜ VE TARİH DÜZELTME (KRİTİK KISIM)
+    if 'police_no' not in df.columns: df['police_no'] = ""
+    
+    # Tarih sütunlarını zorla tarih formatına çevir, hata varsa 'NaT' (Boş tarih) yap
     df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'], errors='coerce')
     df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'], errors='coerce')
     df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'], errors='coerce')
+    
 except:
     df = pd.DataFrame(columns=['kayit_yapan', 'police_no', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi', 'telefon'])
 
@@ -95,14 +98,14 @@ if choice == "kaydet":
         
         st.divider()
         t1, t2, t3 = st.columns(3)
-        tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now())
-        baslangic = t2.date_input("🚀 Başlangıç Tarihi", datetime.now())
+        tanzim_val = t1.date_input("📅 Tanzim Tarihi", datetime.now())
+        baslangic_val = t2.date_input("🚀 Başlangıç Tarihi", datetime.now())
         
         sure_secenekleri = {"1 Yıllık": relativedelta(years=1), "2 Aylık": relativedelta(months=2)}
         sure_etiket = t3.selectbox("⏳ Poliçe Süresi", list(sure_secenekleri.keys()))
         
-        bitis_tarihi = baslangic + sure_secenekleri[sure_etiket]
-        st.caption(f"ℹ️ Hesaplanan Bitiş Tarihi: **{bitis_tarihi.strftime('%d.%m.%Y')}**")
+        bitis_val = baslangic_val + sure_secenekleri[sure_etiket]
+        st.caption(f"ℹ️ Hesaplanan Bitiş: **{bitis_val.strftime('%d.%m.%Y')}**")
         
         if st.form_submit_button("✅ SİSTEME KAYDET"):
             if all([p_no, musteri, tel, brans, prim > 0]):
@@ -110,11 +113,20 @@ if choice == "kaydet":
                 uyg_oran = oran / 2 if kaynak == "Dış Acente" else oran
                 kazanc = prim * (uyg_oran / 100)
                 
+                # VERİYİ KAYDEDERKEN STRING OLARAK FORMATLIYORUZ (GSHEETS İÇİN)
                 new_row = pd.DataFrame([{
-                    "kayit_yapan": st.session_state.username, "police_no": str(p_no), "musteri_adi": musteri, "police_turu": brans,
-                    "kaynak": kaynak, "brut_prim": prim, "oran": f"%{uyg_oran:.2f}", "net_komisyon": kazanc,
-                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
-                    "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), "telefon": tel
+                    "kayit_yapan": st.session_state.username, 
+                    "police_no": str(p_no), 
+                    "musteri_adi": musteri, 
+                    "police_turu": brans,
+                    "kaynak": kaynak, 
+                    "brut_prim": prim, 
+                    "oran": f"%{uyg_oran:.2f}", 
+                    "net_komisyon": kazanc,
+                    "tanzim_tarihi": tanzim_val.strftime("%Y-%m-%d"), 
+                    "baslangic_tarihi": baslangic_val.strftime("%Y-%m-%d"),
+                    "bitis_tarihi": bitis_val.strftime("%Y-%m-%d"), 
+                    "telefon": tel
                 }])
                 
                 updated_df = pd.concat([df, new_row], ignore_index=True)
@@ -127,29 +139,25 @@ if choice == "kaydet":
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takip ve Filtreleme")
     if not df.empty:
-        # Arama ve Filtreleme Alanı
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+        col1, col2, col3 = st.columns([2, 2, 2])
         s_no = col1.text_input("🔢 Poliçe No Ara")
         s_isim = col2.text_input("👤 Müşteri Ara")
         s_brans = col3.multiselect("📑 Branş Seç", options=sorted(df['police_turu'].unique()))
         
-        # Filtreleme Mantığı
         f_df = df.copy()
-        if s_no: f_df = f_df[f_df['police_no'].astype(str).str.contains(s_no, case=False)]
-        if s_isim: f_df = f_df[f_df['musteri_adi'].str.contains(s_isim, case=False)]
+        if s_no: f_df = f_df[f_df['police_no'].astype(str).str.contains(s_no, case=False, na=False)]
+        if s_isim: f_df = f_df[f_df['musteri_adi'].astype(str).str.contains(s_isim, case=False, na=False)]
         if s_brans: f_df = f_df[f_df['police_turu'].isin(s_brans)]
         
-        # Özet İstatistik Kartları (Filtreye Göre)
         st.divider()
         m1, m2, m3 = st.columns(3)
         m1.metric("Bulunan Poliçe", len(f_df))
         m2.metric("Toplam Brüt Prim", f"{f_df['brut_prim'].sum():,.2f} TL")
         m3.metric("Tahmini Net Kazanç", f"{f_df['net_komisyon'].sum():,.2f} TL")
         
-        # Tabloyu Güzelleştirme
+        # Tabloyu Tanzim Tarihine göre sırala (Tarih formatında olduğu için düzgün sıralar)
         f_df = f_df.sort_values('tanzim_tarihi', ascending=False)
         
-        # Sütun isimlerini daha şık yapalım
         display_df = f_df[['police_no', 'musteri_adi', 'police_turu', 'brut_prim', 'net_komisyon', 'tanzim_tarihi', 'bitis_tarihi', 'telefon']]
         display_df.columns = ['Poliçe No', 'Müşteri Adı', 'Branş', 'Brüt Prim', 'Komisyon', 'Tanzim', 'Vade Sonu', 'Telefon']
         
@@ -158,32 +166,34 @@ elif choice == "takip":
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Poliçe No": st.column_config.TextColumn("🔢 Poliçe No"),
+                "Tanzim": st.column_config.DateColumn("📅 Tanzim", format="DD.MM.YYYY"),
+                "Vade Sonu": st.column_config.DateColumn("🏁 Vade Sonu", format="DD.MM.YYYY"),
                 "Brüt Prim": st.column_config.NumberColumn("💰 Prim", format="%.2f TL"),
                 "Komisyon": st.column_config.NumberColumn("📈 Komisyon", format="%.2f TL"),
-                "Tanzim": st.column_config.DateColumn("📅 Tanzim"),
-                "Vade Sonu": st.column_config.DateColumn("🏁 Vade Sonu"),
             }
         )
     else:
         st.info("Henüz kayıtlı poliçe bulunamadı.")
 
+# (Diğer bölümler aynı kalabilir, tarih düzelten kısım yukarıdaki 'Veri Okuma' ve 'Takip' kısmıdır)
 elif choice == "rapor":
     st.subheader("📊 Finansal Analiz")
     if not df.empty:
+        # Tarihi olmayan satırları rapordan geçici olarak çıkar ki hata vermesin
+        rdf = df.dropna(subset=['tanzim_tarihi'])
         m1, m2, m3 = st.columns(3)
-        m1.metric("Toplam Brüt Prim", f"{df['brut_prim'].sum():,.2f} TL")
-        m2.metric("Toplam Net Kazanç", f"{df['net_komisyon'].sum():,.2f} TL")
-        m3.metric("Poliçe Sayısı", len(df))
+        m1.metric("Toplam Brüt Prim", f"{rdf['brut_prim'].sum():,.2f} TL")
+        m2.metric("Toplam Net Kazanç", f"{rdf['net_komisyon'].sum():,.2f} TL")
+        m3.metric("Poliçe Sayısı", len(rdf))
         
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            fig1 = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.4)
+            fig1 = px.pie(rdf, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.4)
             st.plotly_chart(fig1, use_container_width=True)
         with c2:
-            df['ay'] = df['tanzim_tarihi'].dt.strftime('%Y-%m')
-            aylik = df.groupby('ay')['net_komisyon'].sum().reset_index()
+            rdf['ay'] = rdf['tanzim_tarihi'].dt.strftime('%Y-%m')
+            aylik = rdf.groupby('ay')['net_komisyon'].sum().reset_index()
             fig2 = px.line(aylik, x='ay', y='net_komisyon', title="Aylık Kazanç Trendi", markers=True)
             st.plotly_chart(fig2, use_container_width=True)
 
@@ -202,8 +212,10 @@ elif choice == "vade":
     st.subheader("🔔 Vade Takip Merkezi")
     if not df.empty:
         bugun = pd.Timestamp(datetime.now().date())
-        df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
-        vade_df = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= -5)].sort_values('kalan_gun')
+        # Tarihi olmayanları filtrele
+        v_df = df.dropna(subset=['bitis_tarihi']).copy()
+        v_df['kalan_gun'] = (v_df['bitis_tarihi'] - bugun).dt.days
+        vade_df = v_df[(v_df['kalan_gun'] <= 30) & (v_df['kalan_gun'] >= -5)].sort_values('kalan_gun')
         
         if not vade_df.empty:
             for _, row in vade_df.iterrows():
