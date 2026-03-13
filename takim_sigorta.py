@@ -92,7 +92,29 @@ if choice == "📝 Yeni Poliçe":
         tel = st.text_input("WhatsApp (5xxxxxxxxx)")
         
         if st.form_submit_button("✅ SİSTEME KAYDET"):
-            bitis = basla + relativedelta(months=2) if is_two_months else basla + relativedelta(years=1)
+            # Tik işaretliyse 2 ay, değilse 1 yıl ekle
+            if is_two_months:
+                bitis = basla + relativedelta(months=2)
+            else:
+                bitis = basla + relativedelta(years=1)
+            
+            new_row = pd.DataFrame([{
+                "police_no": p_no, 
+                "müşteri_adı": m_adi.upper(), 
+                "sigorta_sirketi": sirket, 
+                "poliçe_türü": brans, 
+                "plaka_tc": plaka.upper(), 
+                "telefon": tel, 
+                "tanzim_tarihi": tanzim.strftime("%d.%m.%Y"), 
+                "başlangıç_tarihi": basla.strftime("%d.%m.%Y"), 
+                "bitiş_tarihi": bitis.strftime("%d.%m.%Y"), 
+                "toplam_tutar": t_tutar, 
+                "alinan_ucret": a_ucret, 
+                "arsiv": "FALSE", # Bu hep büyük harf "FALSE" kalsın
+                "kayıt_yapan": st.session_state.username
+            }])
+            conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
+            st.success("Kayıt Başarılı!"); st.rerun()
             
             new_row = pd.DataFrame([{
                 "police_no": p_no, "müşteri_adı": m_adi.upper(), "sigorta_sirketi": sirket, 
@@ -145,3 +167,4 @@ elif choice == "🔐 Yönetici Paneli":
 
 if st.sidebar.button("🔴 Çıkış"):
     st.session_state.clear(); st.rerun()
+
