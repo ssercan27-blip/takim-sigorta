@@ -90,63 +90,22 @@ if choice == "kaydet":
         bitis = t3.date_input("🏁 Bitiş", baslangic + timedelta(days=365))
         
         if st.form_submit_button("✅ Kaydet"):
-            oran = KOMISYON_SOZLUGU[brans]
-            uyg_oran = oran / 2 if kaynak == "Dış Acente" else oran
-            kazanc = prim * (uyg_oran / 100)
-            
-            new_row = pd.DataFrame([{
-                "kayit_yapan": st.session_state.username, "musteri_adi": musteri, "police_turu": brans,
-                "kaynak": kaynak, "brut_prim": prim, "oran": f"%{uyg_oran:.2f}", "net_komisyon": kazanc,
-                "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
-                "bitis_tarihi": bitis.strftime("%Y-%m-%d"), "telefon": tel
-            }])
-            updated_df = pd.concat([df, new_row], ignore_index=True)
-            conn.update(worksheet=selected_page, data=updated_df)
-            st.success("Kayıt Başarılı!")
+            if musteri and tel:
+                oran = KOMISYON_SOZLUGU[brans]
+                uyg_oran = oran / 2 if kaynak == "Dış Acente" else oran
+                kazanc = prim * (uyg_oran / 100)
+                
+                new_row = pd.DataFrame([{
+                    "kayit_yapan": st.session_state.username, "musteri_adi": musteri, "police_turu": brans,
+                    "kaynak": kaynak, "brut_prim": prim, "oran": f"%{uyg_oran:.2f}", "net_komisyon": kazanc,
+                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
+                    "bitis_tarihi": bitis.strftime("%Y-%m-%d"), "telefon": tel
+                }])
+                updated_df = pd.concat([df, new_row], ignore_index=True)
+                conn.update(worksheet=selected_page, data=updated_df)
+                st.success("Kayıt Başarılı!")
+                st.rerun()
+            else:
+                st.warning("Lütfen isim ve telefon bilgilerini doldurun.")
 
-elif choice == "takip":
-    st.subheader("🔎 Poliçe Takip ve Arama")
-    if not df.empty:
-        with st.expander("🔍 Arama Filtreleri", expanded=True):
-            f1, f2, f3 = st.columns(3)
-            search_name = f1.text_input("Müşteri Adı")
-            search_brans = f2.multiselect("Branş", options=df['police_turu'].unique())
-            search_source = f3.multiselect("Kaynak", options=df['kaynak'].unique())
-        
-        filtered = df.copy()
-        if search_name: filtered = filtered[filtered['musteri_adi'].str.contains(search_name, case=False, na=False)]
-        if search_brans: filtered = filtered[filtered['police_turu'].isin(search_brans)]
-        if search_source: filtered = filtered[filtered['kaynak'].isin(search_source)]
-        
-        st.dataframe(filtered.sort_values('tanzim_tarihi', ascending=False), use_container_width=True, hide_index=True)
-    else: st.info("Henüz poliçe kaydı bulunmuyor.")
-
-elif choice == "rapor":
-    st.subheader("📊 Finansal Analiz")
-    if not df.empty:
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Toplam Brüt Prim", f"{df['brut_prim'].sum():,.2f} TL")
-        m2.metric("Toplam Net Kazanç", f"{df['net_komisyon'].sum():,.2f} TL")
-        m3.metric("Poliçe Sayısı", len(df))
-        
-        st.divider()
-        c1, c2 = st.columns(2)
-        with c1:
-            fig1 = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.4)
-            st.plotly_chart(fig1, use_container_width=True)
-        with c2:
-            df['ay'] = df['tanzim_tarihi'].dt.strftime('%Y-%m')
-            aylik = df.groupby('ay')['net_komisyon'].sum().reset_index()
-            fig2 = px.line(aylik, x='ay', y='net_komisyon', title="Aylık Kazanç Trendi", markers=True)
-            st.plotly_chart(fig2, use_container_width=True)
-
-elif choice == "cari":
-    st.subheader("👤 Müşteri Detayları")
-    if not df.empty:
-        df['benzersiz_musteri'] = df['musteri_adi'] + " - " + df['telefon'].astype(str)
-        secilen = st.selectbox("Müşteri Seçin", ["Seçiniz..."] + sorted(list(df['benzersiz_musteri'].unique())))
-        
-        if secilen != "Seçiniz...":
-            m_df = df[df['benzersiz_musteri'] == secilen]
-            st.info(f"**Toplam Kazanç:** {m_df['net_komisyon'].sum():,.2f} TL | **Poliçe Sayısı:** {len(m_df)}")
-            st.dataframe(m_df[['police_turu', 'brut
+elif choice
