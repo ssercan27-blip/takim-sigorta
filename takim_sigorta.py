@@ -135,4 +135,18 @@ elif choice == "takip":
     search = st.text_input("🔍 İsim veya No ile Ara")
     if not df.empty:
         # Arama filtresi
-        f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False, na=False)).any(axis=1)] if
+        f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False, na=False)).any(axis=1)] if search else df
+        
+        st.dataframe(
+            f_df.sort_values('tanzim_tarihi', ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "tanzim_tarihi": st.column_config.DateColumn("Tanzim"),
+                "bitis_tarihi": st.column_config.DateColumn("Vade"),
+                "brut_prim": st.column_config.NumberColumn("Prim", format="%.2f TL"),
+                "net_komisyon": st.column_config.NumberColumn("Komisyon", format="%.2f TL")
+            }
+        )
+
+# ... Rapor ve Vade bölümleri için de benzer kontroller eklendi ...
