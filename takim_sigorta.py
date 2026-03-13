@@ -108,4 +108,72 @@ if choice == "kaydet":
             else:
                 st.warning("Lütfen isim ve telefon bilgilerini doldurun.")
 
-elif choice
+elif choice == "takip":
+    st.subheader("🔎 Poliçe Takip ve Arama")
+    if not df.empty:
+        with st.expander("🔍 Arama Filtreleri", expanded=True):
+            f1, f2, f3 = st.columns(3)
+            search_name = f1.text_input("Müşteri Adı")
+            search_brans = f2.multiselect("Branş", options=df['police_turu'].unique())
+            search_source = f3.multiselect("Kaynak", options=df['kaynak'].unique())
+        
+        filtered = df.copy()
+        if search_name: filtered = filtered[filtered['musteri_adi'].str.contains(search_name, case=False, na=False)]
+        if search_brans: filtered = filtered[filtered['police_turu'].isin(search_brans)]
+        if search_source: filtered = filtered[filtered['kaynak'].isin(search_source)]
+        
+        st.dataframe(filtered.sort_values('tanzim_tarihi', ascending=False), use_container_width=True, hide_index=True)
+    else: st.info("Henüz poliçe kaydı bulunmuyor.")
+
+elif choice == "rapor":
+    st.subheader("📊 Finansal Analiz")
+    if not df.empty:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Toplam Brüt Prim", f"{df['brut_prim'].sum():,.2f} TL")
+        m2.metric("Toplam Net Kazanç", f"{df['net_komisyon'].sum():,.2f} TL")
+        m3.metric("Poliçe Sayısı", len(df))
+        
+        st.divider()
+        c1, c2 = st.columns(2)
+        with c1:
+            fig1 = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.4)
+            st.plotly_chart(fig1, use_container_width=True)
+        with c2:
+            df['ay'] = df['tanzim_tarihi'].dt.strftime('%Y-%m')
+            aylik = df.groupby('ay')['net_komisyon'].sum().reset_index()
+            fig2 = px.line(aylik, x='ay', y='net_komisyon', title="Aylık Kazanç Trendi", markers=True)
+            st.plotly_chart(fig2, use_container_width=True)
+
+elif choice == "cari":
+    st.subheader("👤 Müşteri Detayları")
+    if not df.empty:
+        df['benzersiz_musteri'] = df['musteri_adi'].astype(str) + " - " + df['telefon'].astype(str)
+        secilen = st.selectbox("Müşteri Seçin", ["Seçiniz..."] + sorted(list(df['benzersiz_musteri'].unique())))
+        
+        if secilen != "Seçiniz...":
+            m_df = df[df['benzersiz_musteri'] == secilen]
+            st.info(f"**Toplam Kazanç:** {m_df['net_komisyon'].sum():,.2f} TL | **Poliçe Sayısı:** {len(m_df)}")
+            st.dataframe(m_df[['police_turu', 'brut_prim', 'tanzim_tarihi', 'bitis_tarihi']], use_container_width=True, hide_index=True)
+    else: st.info("Henüz kayıtlı müşteri bulunmuyor.")
+
+elif choice == "vade":
+    st.subheader("🔔 Vade Takip Merkezi")
+    if not df.empty:
+        bugun = pd.Timestamp(datetime.now().date())
+        df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
+        vade_df = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= -5)].sort_values('kalan_gun')
+        
+        if not vade_df.empty:
+            for _, row in vade_df.iterrows():
+                with st.container(border=True):
+                    col1, col2 = st.columns([3, 1])
+                    durum = "🔴" if row['kalan_gun'] < 0 else "🟠"
+                    col1.markdown(f"### {durum} {row['musteri_adi']}")
+                    col1.write(f"**Vade:** {row['bitis_tarihi'].strftime('%d.%m.%Y')} ({row['kalan_gun']} gün kaldı)")
+                    
+                    tel = str(row['telefon']).strip()
+                    if not tel.startswith('90') and len(tel) > 0: tel = "90" + (tel[1:] if tel.startswith('0') else tel)
+                    msg = f"Sayın {row['musteri_adi']}, Takim Sigorta'dan hatırlatırız: {row['police_turu']} poliçe vadeniz dolmaktadır."
+                    wa_url = f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
+                    col2.link_button("💬 Hatırlat", wa_url, use_container_width=True)
+        else: st.success("Yakın zamanda vadesi dolacak poliçe yok.")
