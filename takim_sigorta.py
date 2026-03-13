@@ -50,7 +50,7 @@ if not st.session_state.authenticated:
     with c2:
         logo = get_logo()
         if logo: st.image(logo, use_container_width=True)
-        st.subheader("🛡️ Takim Sigorta Giriş")
+        st.subheader("Takim Sigorta Giriş")
         u = st.text_input("Kullanıcı Adı").lower()
         p = st.text_input("Şifre", type="password")
         if st.button("SİSTEMİ BAŞLAT", use_container_width=True):
@@ -105,3 +105,4 @@ elif choice == "🔎 Poliçe Takibi":
 
 elif choice == "📊 Analiz":
     st.info("Bu bölüm bir sonraki adımda entegre edilecektir. Şu an 'Yeni Poliçe' aktif.")
+
