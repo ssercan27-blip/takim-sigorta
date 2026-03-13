@@ -45,46 +45,29 @@ if not st.session_state.authenticated:
                 st.error("Giriş başarısız!")
     st.stop()
 
-# --- VERİ BAĞLANTISI (TEK SAYFA: Sayfa1) ---
+# --- VERİ BAĞLANTISI ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 WORKSHEET_NAME = "Sayfa1" 
 
 def load_data():
     try:
-        # Tek bir sayfayı oku
         raw_df = conn.read(worksheet=WORKSHEET_NAME, ttl=0)
         if raw_df is None or raw_df.empty:
             return pd.DataFrame()
-        
-        # Sütun isimlerini standartlaştır (Boş ekranı engeller)
         raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
-        
-        # Tarih ve Sayı formatlarını ayarla
         for col in ['tanzim_tarihi', 'bitis_tarihi']:
             if col in raw_df.columns:
                 raw_df[col] = pd.to_datetime(raw_df[col], errors='coerce')
-        
-        if 'brut_prim' in raw_df.columns:
-            raw_df['brut_prim'] = pd.to_numeric(raw_df['brut_prim'], errors='coerce').fillna(0)
-        if 'net_komisyon' in raw_df.columns:
-            raw_df['net_komisyon'] = pd.to_numeric(raw_df['net_komisyon'], errors='coerce').fillna(0)
-                
         return raw_df
-    except Exception:
+    except:
         return pd.DataFrame()
 
 df = load_data()
 
 # SIDEBAR
-if os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_container_width=True)
 st.sidebar.markdown(f"👤 Yetkili: **{st.session_state.username.upper()}**")
-menu = {"📝 Yeni Poliçe": "kaydet", "🔎 Poliçe Takibi": "takip", "📊 Analiz": "rapor", "🔔 Vade Takip": "vade"}
+menu = {"📝 Yeni Poliçe": "kaydet", "🔎 Poliçe Takibi / Düzenle": "takip", "📊 Analiz": "rapor", "🔔 Vade Takip": "vade"}
 choice = menu[st.sidebar.radio("⚙️ İşlem Merkezi", list(menu.keys()))]
-
-if st.sidebar.button("🔴 Çıkış"):
-    st.session_state.authenticated = False
-    st.rerun()
 
 # --- SAYFALAR ---
 
@@ -99,16 +82,16 @@ if choice == "kaydet":
         prim = st.number_input("💰 Brüt Prim (TL)", min_value=0.0)
         
         t1, t2 = st.columns(2)
-        tanzim = t1.date_input("📅 Tanzim", datetime.now())
+        # TARİH FORMATI: GÜN AY YIL
+        tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now(), format="DD/MM/YYYY")
         sure = t2.selectbox("⏳ Süre", ["1 Yıllık", "2 Aylık"])
         
         bitis_tarihi = tanzim + (relativedelta(years=1) if sure == "1 Yıllık" else relativedelta(months=2))
-        st.caption(f"ℹ️ Hesaplanan Bitiş: {bitis_tarihi.strftime('%d.%m.%Y')}")
+        st.info(f"💡 Hesaplanan Vade Sonu: {bitis_tarihi.strftime('%d.%m.%Y')}")
         
         if st.form_submit_button("✅ SİSTEME KAYDET"):
             if all([p_no, musteri, tel, prim > 0]):
-                oran = KOMISYON_SOZLUGU[brans]
-                kazanc = prim * (oran / 100)
+                kazanc = prim * (KOMISYON_SOZLUGU[brans] / 100)
                 new_row = pd.DataFrame([{
                     "kayit_yapan": st.session_state.username, "police_no": str(p_no), "musteri_adi": musteri,
                     "police_turu": brans, "brut_prim": prim, "net_komisyon": kazanc,
@@ -120,39 +103,29 @@ if choice == "kaydet":
                 st.rerun()
 
 elif choice == "takip":
-    st.subheader("🔎 Poliçe Takibi")
+    st.subheader("🔎 Poliçe Takibi ve Yönetimi")
     
-    if st.session_state.role == "admin" and not df.empty:
-        with st.expander("🗑️ Yönetici: Kayıt Sil", expanded=False):
-            delete_no = st.selectbox("Silinecek Poliçe", ["Seçiniz..."] + df['police_no'].astype(str).tolist())
-            if st.button("❌ SEÇİLİ KAYDI SİL") and delete_no != "Seçiniz...":
-                new_df = df[df['police_no'].astype(str) != delete_no]
-                conn.update(worksheet=WORKSHEET_NAME, data=new_df)
-                st.success("Kayıt Silindi!")
-                st.rerun()
-
-    search = st.text_input("🔍 Hızlı Ara (İsim veya No)")
     if not df.empty:
-        f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)] if search else df
-        st.dataframe(f_df.sort_values('tanzim_tarihi', ascending=False), use_container_width=True, hide_index=True)
-
-elif choice == "rapor":
-    st.subheader("📊 Finansal Analiz")
-    if not df.empty:
-        m1, m2 = st.columns(2)
-        m1.metric("Toplam Prim", f"{df['brut_prim'].sum():,.2f} TL")
-        m2.metric("Toplam Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
-        fig = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı")
-        st.plotly_chart(fig, use_container_width=True)
-
-elif choice == "vade":
-    st.subheader("🔔 Vade Takip")
-    if not df.empty:
-        bugun = pd.Timestamp(datetime.now().date())
-        v_df = df.dropna(subset=['bitis_tarihi']).copy()
-        v_df['kalan'] = (v_df['bitis_tarihi'] - bugun).dt.days
-        yaklasan = v_df[v_df['kalan'] <= 30].sort_values('kalan')
-        if not yaklasan.empty:
-            st.dataframe(yaklasan[['police_no', 'musteri_adi', 'bitis_tarihi', 'kalan']], use_container_width=True, hide_index=True)
-        else:
-            st.success("Yakın zamanda vadesi dolacak poliçe yok.")
+        # --- DÜZENLEME VE SİLME BÖLÜMÜ ---
+        with st.expander("🛠️ Kayıt Düzenle veya Sil", expanded=False):
+            st.info("Düzenlemek veya silmek istediğiniz poliçeyi seçin.")
+            secilen_no = st.selectbox("Poliçe Seçin", ["Seçiniz..."] + sorted(df['police_no'].astype(str).unique().tolist()))
+            
+            if secilen_no != "Seçiniz...":
+                # Seçilen poliçenin verilerini getir
+                idx = df[df['police_no'].astype(str) == secilen_no].index[0]
+                row = df.loc[idx]
+                
+                with st.form("duzenleme_formu"):
+                    u_musteri = st.text_input("Müşteri Adı", value=str(row['musteri_adi']))
+                    u_prim = st.number_input("Brüt Prim", value=float(row['brut_prim']))
+                    u_tanzim = st.date_input("Tanzim Tarihi", value=row['tanzim_tarihi'], format="DD/MM/YYYY")
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.form_submit_button("💾 DEĞİŞİKLİKLERİ KAYDET"):
+                            df.at[idx, 'musteri_adi'] = u_musteri
+                            df.at[idx, 'brut_prim'] = u_prim
+                            df.at[idx, 'tanzim_tarihi'] = u_tanzim
+                            # Komisyonu yeniden hesapla
+                            oran = KOMISY
