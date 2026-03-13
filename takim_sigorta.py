@@ -1,65 +1,100 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta Takip", layout="centered")
+st.set_page_config(page_title="Takim Sigorta Giriş", layout="centered")
 
-# Google Sheets Bağlantısı
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-# Mevcut verileri oku
+# 1. LOGO VE GÖRSEL DÜZENLEME (Logoyu burada kalıcı hale getiriyoruz)
+# Not: Logonun GitHub'da 'logo.jpg' adıyla kayıtlı olduğundan emin ol
 try:
-    existing_data = conn.read(worksheet="Sheet1", ttl=0)
+    st.image("logo.jpg", width=200)
 except:
-    existing_data = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'vade_tarihi', 'tutar'])
+    st.title("🛡️ TAKİM SİGORTA")
 
-st.title("🛡️ Takim Sigorta Poliçe Takip")
+# 2. KULLANICI GİRİŞ SİSTEMİ (Basit ve Etkili)
+# Buradaki isimleri ve şifreleri istediğin gibi değiştirebilirsin
+USER_CREDENTIALS = {
+    "sercan": "takim2026",
+    "personel1": "sigorta123",
+    "admin": "admin44"
+}
 
-# Menü Seçenekleri
-menu = ["Yeni Poliçe Ekle", "Poliçe Listesi"]
-choice = st.sidebar.selectbox("İşlem Seçin", menu)
+def check_password():
+    """Kullanıcı adı ve şifre kontrolü yapar."""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
 
-if choice == "Yeni Poliçe Ekle":
-    st.subheader("📋 Yeni Kayıt Girişi")
-    
-    with st.form("police_form", clear_on_submit=True):
-        kayit_yapan = st.text_input("Kayıt Yapan Personel")
-        musteri_adi = st.text_input("Müşteri Adı Soyadı")
-        police_turu = st.selectbox("Poliçe Türü", ["Trafik", "Kasko", "DASK", "Sağlık", "Konut", "Diğer"])
-        vade_tarihi = st.date_input("Vade Bitiş Tarihi")
-        tutar = st.number_input("Poliçe Tutarı (TL)", min_value=0.0, format="%.2f")
-        
-        submit = st.form_submit_button("Sisteme Kaydet")
-        
-        if submit:
-            if musteri_adi and kayit_yapan:
-                # Yeni veriyi hazırla
-                new_row = pd.DataFrame([{
-                    "kayit_yapan": kayit_yapan,
-                    "musteri_adi": musteri_adi,
-                    "police_turu": police_turu,
-                    "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d"),
-                    "tutar": tutar
-                }])
-                
-                # Mevcut veriye ekle
-                updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-                
-                # Google Sheets'e geri yaz
-                conn.update(worksheet="Sheet1", data=updated_df)
-                
-                st.success(f"{musteri_adi} adına poliçe başarıyla Google Tablolar'a kaydedildi!")
-                st.balloons()
+    if not st.session_state.authenticated:
+        st.subheader("🔑 Personel Girişi")
+        user = st.text_input("Kullanıcı Adı")
+        pw = st.text_input("Şifre", type="password")
+        if st.button("Giriş Yap"):
+            if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
+                st.session_state.authenticated = True
+                st.session_state.username = user
+                st.rerun()
             else:
-                st.error("Lütfen müşteri adı ve personel bilgisini doldurun.")
+                st.error("Hatalı kullanıcı adı veya şifre!")
+        return False
+    return True
 
-elif choice == "Poliçe Listesi":
-    st.subheader("🔍 Kayıtlı Poliçeler")
-    # Verileri Google Sheets'ten tazele
-    data = conn.read(worksheet="Sheet1", ttl=0)
-    if not data.empty:
-        st.dataframe(data, use_container_width=True)
-    else:
-        st.info("Henüz kayıtlı bir poliçe bulunamadı.")
+if check_password():
+    # 3. VERİTABANI BAĞLANTISI
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
+    # Mevcut verileri oku
+    try:
+        existing_data = conn.read(worksheet="Sheet1", ttl=0)
+    except:
+        existing_data = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'vade_tarihi', 'tutar'])
+
+    # Giriş yapan personelin ismini sağ üstte göster
+    st.sidebar.success(f"Hoş geldin, {st.session_state.username.capitalize()}")
+    if st.sidebar.button("Güvenli Çıkış"):
+        st.session_state.authenticated = False
+        st.rerun()
+
+    st.title("🛡️ Poliçe Yönetim Sistemi")
+
+    menu = ["Yeni Poliçe Ekle", "Poliçe Listesi (Kişisel)"]
+    choice = st.sidebar.selectbox("İşlem Menüsü", menu)
+
+    if choice == "Yeni Poliçe Ekle":
+        st.subheader("📋 Yeni Kayıt Girişi")
+        with st.form("police_form", clear_on_submit=True):
+            musteri_adi = st.text_input("Müşteri Adı Soyadı")
+            police_turu = st.selectbox("Poliçe Türü", ["Trafik", "Kasko", "DASK", "Sağlık", "Konut", "Diğer"])
+            vade_tarihi = st.date_input("Vade Bitiş Tarihi")
+            tutar = st.number_input("Poliçe Tutarı (TL)", min_value=0.0, format="%.2f")
+            
+            submit = st.form_submit_button("Sisteme Kaydet")
+            
+            if submit:
+                if musteri_adi:
+                    new_row = pd.DataFrame([{
+                        "kayit_yapan": st.session_state.username,
+                        "musteri_adi": musteri_adi,
+                        "police_turu": police_turu,
+                        "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d"),
+                        "tutar": tutar
+                    }])
+                    updated_df = pd.concat([existing_data, new_row], ignore_index=True)
+                    conn.update(worksheet="Sheet1", data=updated_df)
+                    st.success("Kayıt başarıyla eklendi!")
+                else:
+                    st.error("Müşteri adı boş bırakılamaz.")
+
+    elif choice == "Poliçe Listesi (Kişisel)":
+        st.subheader(f"🔍 {st.session_state.username.capitalize()} - Kayıtlı Poliçeler")
+        data = conn.read(worksheet="Sheet1", ttl=0)
+        
+        if not data.empty:
+            # Sadece giriş yapan kullanıcının verilerini filtrele
+            user_data = data[data['kayit_yapan'] == st.session_state.username]
+            if not user_data.empty:
+                st.dataframe(user_data, use_container_width=True)
+            else:
+                st.info("Henüz size ait bir kayıt bulunamadı.")
+        else:
+            st.info("Sistemde kayıtlı veri yok.")
