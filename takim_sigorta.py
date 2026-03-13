@@ -2,6 +2,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
+from datetime import datetime
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Takim Sigorta - Komisyon Yönetimi", layout="centered")
@@ -52,7 +53,6 @@ if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     st.sidebar.title("📌 İşlem Merkezi")
-    # Sayfa seçimi gizli kalsın ama işlevini yapsın
     selected_page = st.sidebar.selectbox("Çalışılacak Sayfa", ["Sayfa1", "Sayfa2", "Sayfa3", "Sayfa4"])
     menu = ["Poliçe Kaydet", "Finansal Rapor"]
     choice = st.sidebar.radio("Menü", menu)
@@ -65,17 +65,23 @@ if check_password():
     try:
         df = conn.read(worksheet=selected_page, ttl=0)
     except:
-        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'vade_tarihi'])
+        # Yeni sütun yapısı: tanzim_tarihi ve baslangic_tarihi eklendi
+        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi'])
 
     if choice == "Poliçe Kaydet":
-        # BAŞLIK DÜZELTİLDİ: Artık teknik sayfa ismi yazmıyor
         st.header("📝 Yeni Poliçe Kaydı")
         with st.form("kayit_formu", clear_on_submit=True):
             musteri_adi = st.text_input("Müşteri Adı Soyadı")
             police_turu = st.selectbox("Branş / Poliçe Türü", list(KOMISYON_SOZLUGU.keys()))
             kaynak = st.radio("Poliçe Kaynağı", ["Öz Portföy", "Dış Acente"])
             brut_prim = st.number_input("Brüt Prim (TL)", min_value=0.0, step=100.0)
-            vade_tarihi = st.date_input("Vade Bitiş Tarihi")
+            
+            # TARİH SEÇENEKLERİ GÜNCELLENDİ
+            col_tar1, col_tar2 = st.columns(2)
+            with col_tar1:
+                tanzim_tarihi = st.date_input("Tanzim Tarihi", value=datetime.now())
+            with col_tar2:
+                baslangic_tarihi = st.date_input("Poliçe Başlangıç Tarihi", value=datetime.now())
             
             submit = st.form_submit_button("Hesapla ve Kaydet")
             
@@ -93,7 +99,8 @@ if check_password():
                         "brut_prim": brut_prim,
                         "oran": f"%{uygulanan_oran:.2f}",
                         "net_komisyon": net_komisyon,
-                        "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d")
+                        "tanzim_tarihi": tanzim_tarihi.strftime("%Y-%m-%d"),
+                        "baslangic_tarihi": baslangic_tarihi.strftime("%Y-%m-%d")
                     }])
                     
                     updated_df = pd.concat([df, new_data], ignore_index=True)
@@ -104,14 +111,7 @@ if check_password():
                     st.error("Lütfen müşteri adını giriniz.")
 
     elif choice == "Finansal Rapor":
-        # BAŞLIK DÜZELTİLDİ
         st.header("🔍 Finansal Özet Raporu")
         if not df.empty:
             display_df = df if st.session_state.username in ["sercan", "admin"] else df[df['kayit_yapan'] == st.session_state.username]
-            c1, c2 = st.columns(2)
-            c1.metric("Toplam Brüt Prim", f"{display_df['brut_prim'].sum():,.2f} TL")
-            c2.metric("Toplam Net Komisyon", f"{display_df['net_komisyon'].sum():,.2f} TL")
-            st.divider()
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("Bu sayfada henüz kayıt bulunmuyor.")
+            c1,
