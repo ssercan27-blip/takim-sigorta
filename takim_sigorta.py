@@ -70,54 +70,34 @@ choice = st.sidebar.radio("İŞLEM MERKEZİ", menu_options)
 # --- 5. SAYFA İÇERİKLERİ ---
 
 # --- YENİ POLİÇE ---
-if choice == "📝 Yeni Poliçe":
-    st.subheader("📝 Yeni Poliçe Kayıt")
-    with st.form("yeni_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        p_no = c1.text_input("Poliçe No")
-        m_adi = c2.text_input("Müşteri Ad Soyad")
-        
-        c3, c4, c5 = st.columns(3)
-        sirket = c3.selectbox("Şirket", ["Allianz", "Axa", "Türkiye", "Sompo", "Mapfre", "HDI", "Diğer"])
-        brans = c4.selectbox("Branş", ["TRAFİK", "KASKO", "DASK", "TSS", "KONUT", "İŞYERİ", "DİĞER"])
-        plaka = c5.text_input("Plaka / TC No")
-
-        # Tikleme (SÜRE HESABI)
-        is_two_months = st.checkbox("Bu bir 2 Aylık Poliçedir")
-        
-        c6, c7 = st.columns(2)
-        tanzim = c6.date_input("Tanzim Tarihi", datetime.now())
-        basla = c7.date_input("Başlangıç Tarihi", datetime.now())
-        
-        c8, c9 = st.columns(2)
-        t_tutar = c8.number_input("Toplam Tutar (TL)", min_value=0.0)
-        a_ucret = c9.number_input("Alınan Ücret (TL)", min_value=0.0)
-        tel = st.text_input("WhatsApp (5xxxxxxxxx)")
-        
-        if st.form_submit_button("✅ SİSTEME KAYDET"):
-            # Vade Hesaplama: Tikliyse 2 ay, değilse 1 yıl ekle
+if st.form_submit_button("✅ SİSTEME KAYDET"):
+            # 1. Vadeyi hesapla
             bitis = basla + relativedelta(months=2) if is_two_months else basla + relativedelta(years=1)
             
-            # Veriyi TR formatında (GG.AA.YYYY) hazırla
+            # 2. BAŞINA TEK TIRNAK EKLE (Sheets formatını zorla bozmak için)
+            tanzim_str = "'" + tanzim.strftime("%d.%m.%Y")
+            basla_str = "'" + basla.strftime("%d.%m.%Y")
+            bitis_str = "'" + bitis.strftime("%d.%m.%Y")
+            
             new_row = pd.DataFrame([{
-                "police_no": p_no, 
+                "police_no": str(p_no), 
                 "müşteri_adı": m_adi.upper(), 
                 "sigorta_sirketi": sirket, 
                 "poliçe_türü": brans, 
                 "plaka_tc": plaka.upper(), 
-                "telefon": tel, 
-                "tanzim_tarihi": tanzim.strftime("%d.%m.%Y"), 
-                "başlangıç_tarihi": basla.strftime("%d.%m.%Y"), 
-                "bitiş_tarihi": bitis.strftime("%d.%m.%Y"), 
+                "telefon": str(tel), 
+                "tanzim_tarihi": tanzim_str, 
+                "başlangıç_tarihi": basla_str, 
+                "bitiş_tarihi": bitis_str, 
                 "toplam_tutar": t_tutar, 
                 "alinan_ucret": a_ucret, 
                 "arsiv": "FALSE", 
                 "kayıt_yapan": st.session_state.username
             }])
             
-            # Google Sheets'e gönder
+            # 3. Kaydet
             conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
-            st.success(f"Kayıt Eklendi! Vade Tarihi: {bitis.strftime('%d.%m.%Y')}")
+            st.success(f"Kayıt Eklendi! Vade: {bitis.strftime('%d.%m.%Y')}")
             st.rerun()
             
 # --- POLİÇE TAKİBİ ---
@@ -163,6 +143,7 @@ elif choice == "🔐 Yönetici Paneli":
 
 if st.sidebar.button("🔴 Çıkış"):
     st.session_state.clear(); st.rerun()
+
 
 
 
