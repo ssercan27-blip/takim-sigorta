@@ -4,42 +4,35 @@ import pandas as pd
 import os
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Personel Paneli", layout="centered")
+st.set_page_config(page_title="Takim Sigorta - Yönetim Paneli", layout="centered")
 
-# 1. LOGO VE GÖRSEL DÜZENLEME
-# Dosya adını logo.jpg olarak güncelledik
+# 1. LOGO ALANI
 if os.path.exists("logo.jpg"):
-    # Logoyu ortalamak için sütun kullanıyoruz
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.image("logo.jpg", use_container_width=True)
 else:
     st.markdown("<h1 style='text-align: center; color: #cc0000;'>🛡️ TAKİM SİGORTA</h1>", unsafe_allow_html=True)
 
-# 2. KULLANICI GİRİŞ SİSTEMİ
-# Buradan personel ekleyebilir veya şifreleri değiştirebilirsin
+# 2. KULLANICI BİLGİLERİ
 USER_CREDENTIALS = {
     "sercan": "takim2026",
-    "personel1": "sigorta123",
-    "admin": "admin44"
+    "admin": "admin44",
+    "personel1": "sigorta123"
 }
 
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
-
     if not st.session_state.authenticated:
         st.divider()
         st.subheader("🔑 Personel Giriş Paneli")
-        user = st.text_input("Kullanıcı Adı")
+        user = st.text_input("Kullanıcı Adı").lower()
         pw = st.text_input("Şifre", type="password")
-        
-        if st.button("Giriş Yap", use_container_width=True):
-            # Küçük/büyük harf duyarlılığını önlemek için .lower() ekledik
-            user_lower = user.lower()
-            if user_lower in USER_CREDENTIALS and USER_CREDENTIALS[user_lower] == pw:
+        if st.button("Sisteme Giriş Yap", use_container_width=True):
+            if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
                 st.session_state.authenticated = True
-                st.session_state.username = user_lower
+                st.session_state.username = user
                 st.rerun()
             else:
                 st.error("Hatalı kullanıcı adı veya şifre!")
@@ -47,76 +40,68 @@ def check_password():
     return True
 
 if check_password():
-    # 3. VERİTABANI (GOOGLE SHEETS) BAĞLANTISI
+    # 3. GOOGLE SHEETS BAĞLANTISI
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Mevcut verileri oku
-    try:
-        existing_data = conn.read(worksheet="Sheet1", ttl=0)
-    except:
-        existing_data = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'vade_tarihi', 'tutar'])
-
-    # Yan Menü (Sidebar)
-    st.sidebar.title("📌 Menü")
-    st.sidebar.success(f"Personel: {st.session_state.username.upper()}")
+    # Yan Menü
+    st.sidebar.title("📌 İşlem Merkezi")
+    st.sidebar.write(f"Kullanıcı: **{st.session_state.username.upper()}**")
     
-    menu = ["Yeni Poliçe Ekle", "Poliçelerim", "Tüm Poliçeler (Admin)"]
-    choice = st.sidebar.radio("Yapmak İstediğiniz İşlem", menu)
+    # Sayfa Seçimi (Buraya Sayfa 2, 3, 4'ü ekledik)
+    selected_page = st.sidebar.selectbox("Çalışılacak Sayfa", ["Sayfa1", "Sayfa2", "Sayfa3", "Sayfa4"])
+    
+    menu = ["Poliçe Kaydet", "Kayıtları Görüntüle"]
+    choice = st.sidebar.radio("İşlem Menüsü", menu)
     
     if st.sidebar.button("Güvenli Çıkış"):
         st.session_state.authenticated = False
         st.rerun()
 
-    # --- SAYFA İÇERİKLERİ ---
+    # --- VERİ OKUMA ---
+    try:
+        # Seçilen sayfadaki veriyi oku
+        df = conn.read(worksheet=selected_page, ttl=0)
+    except Exception:
+        # Sayfa boşsa veya hata verirse sütunları oluştur
+        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'vade_tarihi', 'tutar'])
 
-    if choice == "Yeni Poliçe Ekle":
-        st.header("📝 Yeni Poliçe Kaydı")
-        with st.form("police_form", clear_on_submit=True):
+    # --- SAYFA İÇERİĞİ ---
+    if choice == "Poliçe Kaydet":
+        st.header(f"📝 {selected_page} - Yeni Kayıt")
+        with st.form("kayit_formu", clear_on_submit=True):
             musteri_adi = st.text_input("Müşteri Adı Soyadı")
             police_turu = st.selectbox("Poliçe Türü", ["Trafik", "Kasko", "DASK", "Sağlık", "Konut", "İş Yeri", "Diğer"])
             vade_tarihi = st.date_input("Vade Bitiş Tarihi")
-            tutar = st.number_input("Poliçe Tutarı (TL)", min_value=0.0, step=100.0)
+            tutar = st.number_input("Tutar (TL)", min_value=0.0, step=100.0)
             
-            submit = st.form_submit_button("Sisteme İşle")
+            submit = st.form_submit_button("Veriyi Tabloya Gönder")
             
             if submit:
                 if musteri_adi:
-                    new_row = pd.DataFrame([{
+                    new_data = pd.DataFrame([{
                         "kayit_yapan": st.session_state.username,
                         "musteri_adi": musteri_adi,
                         "police_turu": police_turu,
                         "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d"),
                         "tutar": tutar
                     }])
-                    # Yeni satırı ekle
-                    updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-                    # Google Sheets'i güncelle
-                    conn.update(worksheet="Sheet1", data=updated_df)
-                    st.success(f"{musteri_adi} kaydı başarıyla tamamlandı!")
+                    # Mevcut veriye ekle ve gönder
+                    updated_df = pd.concat([df, new_data], ignore_index=True)
+                    conn.update(worksheet=selected_page, data=updated_df)
+                    st.success(f"Başarıyla {selected_page} sekmesine kaydedildi!")
                     st.balloons()
                 else:
-                    st.error("Lütfen müşteri adını giriniz.")
+                    st.error("Lütfen müşteri adını doldurun.")
 
-    elif choice == "Poliçelerim":
-        st.header(f"🔍 Kayıtlarım ({st.session_state.username})")
-        data = conn.read(worksheet="Sheet1", ttl=0)
-        if not data.empty:
-            # Sadece giriş yapan personelin kayıtlarını süz
-            user_data = data[data['kayit_yapan'] == st.session_state.username]
-            if not user_data.empty:
-                st.dataframe(user_data, use_container_width=True)
+    elif choice == "Kayıtları Görüntüle":
+        st.header(f"🔍 {selected_page} Verileri")
+        if not df.empty:
+            # Sercan veya Admin her şeyi görür, personel sadece kendi yaptıklarını
+            if st.session_state.username in ["sercan", "admin"]:
+                st.dataframe(df, use_container_width=True)
+                st.metric("Bu Sayfadaki Toplam Ciro", f"{df['tutar'].sum():,.2f} TL")
             else:
-                st.info("Henüz eklediğiniz bir poliçe bulunmuyor.")
+                user_df = df[df['kayit_yapan'] == st.session_state.username]
+                st.dataframe(user_df, use_container_width=True)
         else:
-            st.info("Sistemde hiç veri yok.")
-
-    elif choice == "Tüm Poliçeler (Admin)":
-        if st.session_state.username == "admin" or st.session_state.username == "sercan":
-            st.header("📊 Genel Poliçe Listesi")
-            data = conn.read(worksheet="Sheet1", ttl=0)
-            st.dataframe(data, use_container_width=True)
-            # Toplam Ciro Göstergesi
-            toplam = data['tutar'].sum()
-            st.metric("Toplam Tahsilat", f"{toplam:,.2f} TL")
-        else:
-            st.warning("Bu alanı görme yetkiniz yok!")
+            st.info(f"{selected_page} sekmesinde henüz hiç kayıt yok.")
