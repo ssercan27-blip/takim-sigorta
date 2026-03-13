@@ -4,151 +4,155 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime, timedelta
+import urllib.parse
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Analiz Paneli", layout="wide")
+st.set_page_config(page_title="Takim Sigorta | Pro Panel", layout="wide", initial_sidebar_state="expanded")
 
-# --- KOMİSYON ORANLARI ---
+# --- KOMİSYON VE AYARLAR ---
 KOMISYON_SOZLUGU = {
     "Trafik": 6.50, "Kasko": 9.50, "Konut": 20.00, "İşyeri": 12.00,
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-# 1. LOGO VE SIDEBAR
+# 1. LOGO VE SIDEBAR TASARIMI
+st.markdown("""<style> .main { background-color: #f5f7f9; } .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); } </style>""", unsafe_allow_html=True)
+
 if os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
 else:
     st.sidebar.markdown("<h2 style='text-align: center; color: #cc0000;'>🛡️ TAKİM SİGORTA</h2>", unsafe_allow_html=True)
 
+# 2. GÜVENLİK
 USER_CREDENTIALS = {"sercan": "takim2026", "admin": "admin44"}
 
-def check_password():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
-    if not st.session_state.authenticated:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.subheader("🔑 Sistem Girişi")
-            user = st.text_input("Kullanıcı Adı").lower()
-            pw = st.text_input("Şifre", type="password")
-            if st.button("Giriş Yap", use_container_width=True):
-                if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
-                    st.session_state.authenticated = True
-                    st.session_state.username = user
-                    st.rerun()
-                else:
-                    st.error("Hatalı kullanıcı adı veya şifre!")
-        return False
-    return True
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-if check_password():
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    st.sidebar.divider()
-    st.sidebar.markdown(f"👤 Yetkili: **{st.session_state.username.upper()}**")
-    
-    page_map = {"Ana Portföy": "Sayfa1", "Ek Kayıtlar": "Sayfa2", "Arşiv": "Sayfa3"}
-    selected_display_name = st.sidebar.selectbox("📂 Çalışma Alanı", list(page_map.keys()))
-    selected_page = page_map[selected_display_name]
-    
-    menu = {"➕ Poliçe Kaydet": "kaydet", "📊 Rapor ve Analiz": "rapor"}
-    choice = menu[st.sidebar.radio("⚙️ Menü", list(menu.keys()))]
-    
-    if st.sidebar.button("🔴 Güvenli Çıkış", use_container_width=True):
-        st.session_state.authenticated = False
-        st.rerun()
-
-    # --- VERİ OKUMA ---
-    try:
-        df = conn.read(worksheet=selected_page, ttl=0)
-        # Tarih dönüşümleri
-        df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'])
-        df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'])
-        df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'])
-    except:
-        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi'])
-
-    if choice == "kaydet":
-        st.markdown(f"### 📋 {selected_display_name} / Yeni Poliçe Girişi")
-        with st.form("kayit_formu", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            with c1:
-                musteri_adi = st.text_input("👤 Müşteri Adı Soyadı")
-                police_turu = st.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
-            with c2:
-                kaynak = st.radio("📡 Kaynak", ["Öz Portföy", "Dış Acente"], horizontal=True)
-                brut_prim = st.number_input("💰 Brüt Prim (TL)", min_value=0.0, step=500.0)
-            
-            st.divider()
-            t1, t2, t3 = st.columns(3)
-            with t1:
-                tanzim = st.date_input("📅 Tanzim", value=datetime.now())
-            with t2:
-                baslangic = st.date_input("🚀 Başlangıç", value=datetime.now())
-            with t3:
-                bitis = st.date_input("🏁 Bitiş (Vade)", value=baslangic + timedelta(days=365))
-            
-            if st.form_submit_button("✅ HESAPLA VE KAYDET", use_container_width=True):
-                if musteri_adi:
-                    ana_oran = KOMISYON_SOZLUGU[police_turu]
-                    uyg_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
-                    komisyon = brut_prim * (uyg_oran / 100)
-                    
-                    new_row = pd.DataFrame([{
-                        "kayit_yapan": st.session_state.username, "musteri_adi": musteri_adi,
-                        "police_turu": police_turu, "kaynak": kaynak, "brut_prim": brut_prim,
-                        "oran": f"%{uyg_oran:.2f}", "net_komisyon": komisyon,
-                        "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"),
-                        "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
-                        "bitis_tarihi": bitis.strftime("%Y-%m-%d")
-                    }])
-                    
-                    updated_df = pd.concat([df, new_row], ignore_index=True)
-                    conn.update(worksheet=selected_page, data=updated_df)
-                    st.success(f"Poliçe Başarıyla Kaydedildi!")
-                    st.balloons()
-
-    elif choice == "rapor":
-        st.markdown(f"### 📊 {selected_display_name} / Finansal Durum")
-        
-        if not df.empty:
-            # Filtre Paneli
-            with st.expander("🔍 Gelişmiş Arama ve Filtrele", expanded=False):
-                f1, f2 = st.columns(2)
-                search = f1.text_input("Müşteri Adı")
-                branch = f2.multiselect("Branş Seç", options=df['police_turu'].unique())
-            
-            f_df = df.copy()
-            if search: f_df = f_df[f_df['musteri_adi'].str.contains(search, case=False, na=False)]
-            if branch: f_df = f_df[f_df['police_turu'].isin(branch)]
-
-            # --- GRAFİKLER ---
-            if not f_df.empty:
-                st.divider()
-                c_col1, c_col2 = st.columns(2)
-                
-                with c_col1:
-                    st.write("**Branş Bazlı Komisyon Dağılımı**")
-                    fig1 = px.pie(f_df, values='net_komisyon', names='police_turu', hole=0.4, 
-                                  color_discrete_sequence=px.colors.qualitative.Set3)
-                    st.plotly_chart(fig1, use_container_width=True)
-                    
-                with c_col2:
-                    st.write("**Kaynak Bazlı Performans**")
-                    source_summary = f_df.groupby('kaynak')['net_komisyon'].sum().reset_index()
-                    fig2 = px.bar(source_summary, x='kaynak', y='net_komisyon', color='kaynak',
-                                  color_discrete_map={'Öz Portföy': '#2ecc71', 'Dış Acente': '#e67e22'})
-                    st.plotly_chart(fig2, use_container_width=True)
-
-                st.divider()
-                # Özet Kartlar
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Toplam Brüt Prim", f"{f_df['brut_prim'].sum():,.2f} TL")
-                m2.metric("Toplam Net Komisyon", f"{f_df['net_komisyon'].sum():,.2f} TL")
-                m3.metric("Poliçe Adedi", len(f_df))
-                
-                st.dataframe(f_df, use_container_width=True)
+if not st.session_state.authenticated:
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        st.header("🔑 Yetkili Girişi")
+        user = st.text_input("Kullanıcı Adı").lower()
+        pw = st.text_input("Şifre", type="password")
+        if st.button("Sistemi Başlat", use_container_width=True):
+            if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
+                st.session_state.authenticated = True
+                st.session_state.username = user
+                st.rerun()
             else:
-                st.warning("Eşleşen kayıt bulunamadı.")
-        else:
-            st.info("Sistemde henüz kayıtlı poliçe bulunmuyor.")
+                st.error("Giriş başarısız!")
+    st.stop()
+
+# --- VERİ BAĞLANTISI ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Sidebar Menü
+st.sidebar.markdown(f"🚀 Hoş geldin, **{st.session_state.username.upper()}**")
+page_map = {"Ana Portföy": "Sayfa1", "Ek Kayıtlar": "Sayfa2", "Arşiv": "Sayfa3"}
+selected_page = page_map[st.sidebar.selectbox("📂 Veri Tabanı", list(page_map.keys()))]
+
+menu = {
+    "📝 Yeni Poliçe": "kaydet",
+    "📊 Finansal Analiz": "rapor",
+    "👤 Müşteri Carileri": "cari",
+    "🔔 Vade Takip": "vade"
+}
+choice = menu[st.sidebar.radio("⚙️ İşlem Merkezi", list(menu.keys()))]
+
+if st.sidebar.button("🔴 Çıkış Yap"):
+    st.session_state.authenticated = False
+    st.rerun()
+
+# Veriyi Oku ve Hazırla
+try:
+    df = conn.read(worksheet=selected_page, ttl=0)
+    df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'])
+    df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'])
+    df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'])
+except:
+    df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi', 'telefon'])
+
+# --- SAYFALAR ---
+
+if choice == "kaydet":
+    st.subheader("📝 Poliçe Kayıt Formu")
+    with st.form("yeni_kayit", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        musteri = c1.text_input("👤 Müşteri Adı Soyadı")
+        tel = c2.text_input("📱 Telefon (Örn: 90530...)", placeholder="905xxxxxxxxx")
+        brans = c1.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
+        kaynak = c2.radio("📡 Kaynak", ["Öz Portföy", "Dış Acente"], horizontal=True)
+        prim = c1.number_input("💰 Brüt Prim (TL)", min_value=0.0, step=500.0)
+        
+        t1, t2, t3 = st.columns(3)
+        tanzim = t1.date_input("📅 Tanzim", datetime.now())
+        baslangic = t2.date_input("🚀 Başlangıç", datetime.now())
+        bitis = t3.date_input("🏁 Bitiş", baslangic + timedelta(days=365))
+        
+        if st.form_submit_button("Sisteme İşle"):
+            oran = KOMISYON_SOZLUGU[brans]
+            uyg_oran = oran / 2 if kaynak == "Dış Acente" else oran
+            kazanc = prim * (uyg_oran / 100)
+            
+            new_row = pd.DataFrame([{
+                "kayit_yapan": st.session_state.username, "musteri_adi": musteri, "police_turu": brans,
+                "kaynak": kaynak, "brut_prim": prim, "oran": f"%{uyg_oran:.2f}", "net_komisyon": kazanc,
+                "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
+                "bitis_tarihi": bitis.strftime("%Y-%m-%d"), "telefon": tel
+            }])
+            updated_df = pd.concat([df, new_row], ignore_index=True)
+            conn.update(worksheet=selected_page, data=updated_df)
+            st.success("Poliçe başarıyla kaydedildi!")
+            st.balloons()
+
+elif choice == "rapor":
+    st.subheader("📊 Genel Performans Analizi")
+    if not df.empty:
+        # Metrikler
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Toplam Brüt", f"{df['brut_prim'].sum():,.2f} TL")
+        m2.metric("Net Kazanç", f"{df['net_komisyon'].sum():,.2f} TL")
+        m3.metric("Poliçe Adedi", len(df))
+        m4.metric("Ort. Komisyon", f"%{(df['net_komisyon'].sum()/df['brut_prim'].sum()*100) if df['brut_prim'].sum()>0 else 0:.2f}")
+        
+        st.divider()
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            fig_pie = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.5)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        with col_g2:
+            df['ay_yil'] = df['tanzim_tarihi'].dt.strftime('%Y-%m')
+            aylik = df.groupby('ay_yil')['net_komisyon'].sum().reset_index()
+            fig_line = px.line(aylik, x='ay_yil', y='net_komisyon', title="Aylık Kazanç Trendi", markers=True)
+            st.plotly_chart(fig_line, use_container_width=True)
+        
+        st.dataframe(df.sort_values('tanzim_tarihi', ascending=False), use_container_width=True)
+    else: st.info("Veri bulunamadı.")
+
+elif choice == "cari":
+    st.subheader("👤 Müşteri Cari Detayları")
+    musteri_listesi = df['musteri_adi'].unique()
+    secilen_musteri = st.selectbox("Müşteri Seçin", ["Seçiniz..."] + list(musteri_listesi))
+    
+    if secilen_musteri != "Seçiniz...":
+        musteri_df = df[df['musteri_adi'] == secilen_musteri]
+        c1, c2 = st.columns(2)
+        c1.info(f"**Toplam Poliçe:** {len(musteri_df)} adet")
+        c2.success(f"**Toplam Bıraktığı Kazanç:** {musteri_df['net_komisyon'].sum():,.2f} TL")
+        st.table(musteri_df[['police_turu', 'brut_prim', 'tanzim_tarihi', 'bitis_tarihi']])
+
+elif choice == "vade":
+    st.subheader("🔔 Vadesi Yaklaşan Poliçeler (Kritik 30 Gün)")
+    bugun = pd.Timestamp(datetime.now().date())
+    df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
+    vade_df = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= -5)].sort_values('kalan_gun')
+    
+    if not vade_df.empty:
+        for idx, row in vade_df.iterrows():
+            with st.container():
+                col_bilgi, col_aksiyon = st.columns([3, 1])
+                renk = "red" if row['kalan_gun'] < 0 else "orange"
+                col_bilgi.markdown(f"**{row['musteri_adi']}** - {row['police_turu']} <br> <span style='color:{renk}'>Kalan Gün: {row['kalan_gun']}</span>", unsafe_allow_html=True)
+                
+                # WhatsApp Mesaj Haz
