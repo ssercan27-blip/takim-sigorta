@@ -98,14 +98,9 @@ if choice == "kaydet":
         tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now())
         baslangic = t2.date_input("🚀 Başlangıç Tarihi", datetime.now())
         
-        # SADELEŞTİRİLMİŞ SÜRE SEÇİMİ
-        sure_secenekleri = {
-            "1 Yıllık": relativedelta(years=1),
-            "2 Aylık": relativedelta(months=2)
-        }
+        sure_secenekleri = {"1 Yıllık": relativedelta(years=1), "2 Aylık": relativedelta(months=2)}
         sure_etiket = t3.selectbox("⏳ Poliçe Süresi", list(sure_secenekleri.keys()))
         
-        # Bitiş tarihini otomatik hesapla
         bitis_tarihi = baslangic + sure_secenekleri[sure_etiket]
         st.caption(f"ℹ️ Hesaplanan Bitiş Tarihi: **{bitis_tarihi.strftime('%d.%m.%Y')}**")
         
@@ -116,42 +111,62 @@ if choice == "kaydet":
                 kazanc = prim * (uyg_oran / 100)
                 
                 new_row = pd.DataFrame([{
-                    "kayit_yapan": st.session_state.username, 
-                    "police_no": str(p_no),
-                    "musteri_adi": musteri, 
-                    "police_turu": brans,
-                    "kaynak": kaynak, 
-                    "brut_prim": prim, 
-                    "oran": f"%{uyg_oran:.2f}", 
-                    "net_komisyon": kazanc,
-                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), 
-                    "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
-                    "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), 
-                    "telefon": tel
+                    "kayit_yapan": st.session_state.username, "police_no": str(p_no), "musteri_adi": musteri, "police_turu": brans,
+                    "kaynak": kaynak, "brut_prim": prim, "oran": f"%{uyg_oran:.2f}", "net_komisyon": kazanc,
+                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
+                    "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), "telefon": tel
                 }])
                 
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(worksheet=selected_page, data=updated_df)
                 st.success(f"Poliçe {p_no} başarıyla kaydedildi.")
-                st.balloons()
+                st.rerun()
             else:
                 st.error("⚠️ Lütfen zorunlu alanları doldurun.")
 
 elif choice == "takip":
-    st.subheader("🔎 Poliçe Takip ve Arama")
+    st.subheader("🔎 Poliçe Takip ve Filtreleme")
     if not df.empty:
-        with st.expander("🔍 Arama Filtreleri", expanded=True):
-            f1, f2, f3 = st.columns(3)
-            search_no = f1.text_input("Poliçe No Ara")
-            search_name = f2.text_input("Müşteri Adı")
-            search_brans = f3.multiselect("Branş", options=df['police_turu'].unique())
+        # Arama ve Filtreleme Alanı
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+        s_no = col1.text_input("🔢 Poliçe No Ara")
+        s_isim = col2.text_input("👤 Müşteri Ara")
+        s_brans = col3.multiselect("📑 Branş Seç", options=sorted(df['police_turu'].unique()))
         
-        filtered = df.copy()
-        if search_no: filtered = filtered[filtered['police_no'].astype(str).str.contains(search_no, case=False, na=False)]
-        if search_name: filtered = filtered[filtered['musteri_adi'].str.contains(search_name, case=False, na=False)]
-        if search_brans: filtered = filtered[filtered['police_turu'].isin(search_brans)]
+        # Filtreleme Mantığı
+        f_df = df.copy()
+        if s_no: f_df = f_df[f_df['police_no'].astype(str).str.contains(s_no, case=False)]
+        if s_isim: f_df = f_df[f_df['musteri_adi'].str.contains(s_isim, case=False)]
+        if s_brans: f_df = f_df[f_df['police_turu'].isin(s_brans)]
         
-        st.dataframe(filtered.sort_values('tanzim_tarihi', ascending=False), use_container_width=True, hide_index=True)
+        # Özet İstatistik Kartları (Filtreye Göre)
+        st.divider()
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Bulunan Poliçe", len(f_df))
+        m2.metric("Toplam Brüt Prim", f"{f_df['brut_prim'].sum():,.2f} TL")
+        m3.metric("Tahmini Net Kazanç", f"{f_df['net_komisyon'].sum():,.2f} TL")
+        
+        # Tabloyu Güzelleştirme
+        f_df = f_df.sort_values('tanzim_tarihi', ascending=False)
+        
+        # Sütun isimlerini daha şık yapalım
+        display_df = f_df[['police_no', 'musteri_adi', 'police_turu', 'brut_prim', 'net_komisyon', 'tanzim_tarihi', 'bitis_tarihi', 'telefon']]
+        display_df.columns = ['Poliçe No', 'Müşteri Adı', 'Branş', 'Brüt Prim', 'Komisyon', 'Tanzim', 'Vade Sonu', 'Telefon']
+        
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Poliçe No": st.column_config.TextColumn("🔢 Poliçe No"),
+                "Brüt Prim": st.column_config.NumberColumn("💰 Prim", format="%.2f TL"),
+                "Komisyon": st.column_config.NumberColumn("📈 Komisyon", format="%.2f TL"),
+                "Tanzim": st.column_config.DateColumn("📅 Tanzim"),
+                "Vade Sonu": st.column_config.DateColumn("🏁 Vade Sonu"),
+            }
+        )
+    else:
+        st.info("Henüz kayıtlı poliçe bulunamadı.")
 
 elif choice == "rapor":
     st.subheader("📊 Finansal Analiz")
