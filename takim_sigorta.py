@@ -22,22 +22,14 @@ KOMISYON_SOZLUGU = {
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-# --- LOGO KONTROL FONKSİYONU ---
-def show_logo(location="main"):
-    logo_path = None
-    if os.path.exists("logo.jpg"): logo_path = "logo.jpg"
-    elif os.path.exists("logo.png"): logo_path = "logo.png"
-    
-    if logo_path:
-        if location == "main":
-            st.image(logo_path, width=250)
-        else:
-            st.sidebar.image(logo_path, use_container_width=True)
+# --- LOGO GÖSTERİMİ ---
+def show_logo(loc="main"):
+    path = "logo.jpg" if os.path.exists("logo.jpg") else ("logo.png" if os.path.exists("logo.png") else None)
+    if path:
+        if loc == "main": st.image(path, width=200)
+        else: st.sidebar.image(path, use_container_width=True)
     else:
-        if location == "main":
-            st.markdown("<h1 style='color: #1E88E5;'>🛡️ TAKİM SİGORTA</h1>", unsafe_allow_html=True)
-        else:
-            st.sidebar.markdown("### 🛡️ TAKİM SİGORTA")
+        st.sidebar.title("🛡️ TAKİM SİGORTA")
 
 # --- VERİ BAĞLANTISI ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -46,150 +38,114 @@ def load_data():
     try:
         raw_df = conn.read(worksheet="Sayfa1", ttl=0)
         if raw_df is None or raw_df.empty: return pd.DataFrame()
+        
+        # Sütun isimlerini temizle ve zorunlu isimleri eşle
         raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
         
-        # Tarih ve Sayısal Dönüşüm
-        for col in ['tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi']:
-            if col in raw_df.columns:
-                raw_df[col] = pd.to_datetime(raw_df[col], errors='coerce')
-        for col in ['brut_prim', 'net_komisyon']:
-            if col in raw_df.columns:
-                raw_df[col] = pd.to_numeric(raw_df[col].astype(str).str.replace(',',''), errors='coerce').fillna(0)
+        # Kritik sütunların varlığını garanti et (Hata almamak için boş sütun oluşturur)
+        required_cols = ['police_no', 'musteri_adi', 'sigorta_sirketi', 'police_turu', 'brut_prim', 'net_komisyon', 'bitis_tarihi', 'arsiv']
+        for col in required_cols:
+            if col not in raw_df.columns:
+                raw_df[col] = False if col == 'arsiv' else ""
         
-        if 'arsiv' not in raw_df.columns:
-            raw_df['arsiv'] = False
+        # Dönüşümler
+        raw_df['bitis_tarihi'] = pd.to_datetime(raw_df['bitis_tarihi'], errors='coerce')
+        raw_df['brut_prim'] = pd.to_numeric(raw_df['brut_prim'], errors='coerce').fillna(0)
+        raw_df['net_komisyon'] = pd.to_numeric(raw_df['net_komisyon'], errors='coerce').fillna(0)
+        raw_df['arsiv'] = raw_df['arsiv'].astype(bool)
+        
         return raw_df
     except:
         return pd.DataFrame()
 
-# 1. GİRİŞ KONTROLÜ
+# 1. GİRİŞ
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        show_logo(location="main")
-        st.markdown("### 🔑 Yetkili Girişi")
-        user_input = st.text_input("Kullanıcı Adı").lower()
-        pw_input = st.text_input("Şifre", type="password")
-        if st.button("SİSTEME GİRİŞ", use_container_width=True):
-            if user_input in st.session_state.users_db and st.session_state.users_db[user_input]["pw"] == pw_input:
-                st.session_state.authenticated = True
-                st.session_state.username = user_input
-                st.session_state.role = st.session_state.users_db[user_input]["role"]
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
+        show_logo("main")
+        u = st.text_input("Kullanıcı Adı").lower()
+        p = st.text_input("Şifre", type="password")
+        if st.button("GİRİŞ", use_container_width=True):
+            if u in st.session_state.users_db and st.session_state.users_db[u]["pw"] == p:
+                st.session_state.authenticated, st.session_state.username = True, u
+                st.session_state.role = st.session_state.users_db[u]["role"]
                 st.rerun()
-            else:
-                st.error("Kullanıcı adı veya şifre hatalı!")
+            else: st.error("Hatalı!")
     st.stop()
 
 df = load_data()
 
 # --- SIDEBAR ---
-show_logo(location="sidebar")
-st.sidebar.markdown(f"**Yetkili:** {st.session_state.username.upper()}")
-menu_options = {"📝 Yeni Poliçe": "kaydet", "🔎 Poliçe Takibi": "takip", "📊 Analiz": "rapor", "🔔 Vade Takip": "vade"}
-if st.session_state.role == "admin":
-    menu_options["🔐 Yönetici Paneli"] = "admin"
+show_logo("sidebar")
+st.sidebar.write(f"Hoş geldin, **{st.session_state.username.upper()}**")
+opt = {"📝 Yeni Poliçe": "kaydet", "🔎 Poliçe Takibi": "takip", "📊 Analiz": "rapor", "🔔 Vade Takip": "vade"}
+if st.session_state.role == "admin": opt["🔐 Yönetici Paneli"] = "admin"
+choice = opt[st.sidebar.radio("Menü", list(opt.keys()))]
 
-choice = menu_options[st.sidebar.radio("⚙️ İşlem Merkezi", list(menu_options.keys()))]
-
-if st.sidebar.button("🔴 Çıkış Yap"):
+if st.sidebar.button("🔴 Çıkış"):
     st.session_state.authenticated = False
     st.rerun()
 
 # --- SAYFALAR ---
-
 if choice == "kaydet":
-    st.subheader("📝 Yeni Poliçe Kaydı")
-    with st.form("yeni_kayit", clear_on_submit=True):
-        p_no = st.text_input("🔢 Poliçe Numarası")
-        c1, c2 = st.columns(2)
-        musteri = c1.text_input("👤 Müşteri Adı Soyadı")
-        tel = c2.text_input("📱 Telefon")
-        sirket = st.selectbox("🏢 Sigorta Şirketi", ["Aksigorta", "Allianz", "Anadolu", "Axa", "Türkiye Sigorta", "HDI", "Mapfre", "Sompo", "Diğer"])
-        brans = st.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
-        prim = st.number_input("💰 Brüt Prim (TL)", min_value=0.0)
-        baslangic = st.date_input("🚀 Başlangıç", datetime.now())
-        bitis_tarihi = baslangic + relativedelta(years=1)
-        
-        if st.form_submit_button("✅ SİSTEME KAYDET"):
-            if all([p_no, musteri, prim > 0]):
-                kazanc = prim * (KOMISYON_SOZLUGU[brans] / 100)
-                new_row = pd.DataFrame([{
-                    "police_no": p_no, "musteri_adi": musteri, "brut_prim": prim, "net_komisyon": kazanc,
-                    "bitis_tarihi": pd.to_datetime(bitis_tarihi), "arsiv": False, "sigorta_sirketi": sirket, "police_turu": brans, "telefon": tel
-                }])
-                conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
-                st.success("Kayıt Başarılı!"); st.rerun()
+    st.subheader("📝 Yeni Poliçe")
+    with st.form("k_form", clear_on_submit=True):
+        p_no = st.text_input("Poliçe No")
+        m_adi = st.text_input("Müşteri Ad Soyad")
+        sirket = st.selectbox("Şirket", ["Aksigorta", "Allianz", "Anadolu", "Axa", "Türkiye", "Diğer"])
+        brans = st.selectbox("Branş", list(KOMISYON_SOZLUGU.keys()))
+        prim = st.number_input("Prim", min_value=0.0)
+        bas = st.date_input("Başlangıç", datetime.now())
+        bitis = bas + relativedelta(years=1)
+        if st.form_submit_button("KAYDET"):
+            kazanc = prim * (KOMISYON_SOZLUGU[brans] / 100)
+            new = pd.DataFrame([{"police_no": p_no, "musteri_adi": m_adi, "sigorta_sirketi": sirket, "police_turu": brans, "brut_prim": prim, "net_komisyon": kazanc, "bitis_tarihi": bitis, "arsiv": False}])
+            conn.update(worksheet="Sayfa1", data=pd.concat([df, new], ignore_index=True))
+            st.success("Kaydedildi!"); st.rerun()
 
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takibi")
-    active_df = df[df['arsiv'] == False].copy() if not df.empty else pd.DataFrame()
-    
-    if not active_df.empty:
-        bugun = pd.Timestamp(datetime.now().date())
-        # Filtreler
-        search = st.text_input("🔍 Hızlı Ara")
-        filtre = st.radio("Durum:", ["Tümü", "Vade Yaklaştı (15 Gün)"], horizontal=True)
-        
+    if not df.empty:
+        # Arşivlenmemişleri ve geçerli verisi olanları göster
+        active = df[df['arsiv'] == False].copy()
+        search = st.text_input("🔍 Ara")
         if search:
-            active_df = active_df[active_df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
-        if filtre == "Vade Yaklaştı (15 Gün)":
-            active_df = active_df[(active_df['bitis_tarihi'] - bugun).dt.days <= 15]
-
-        # Excel stili liste ve Arşiv Butonu
-        for i, row in active_df.iterrows():
+            active = active[active.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+        
+        for i, r in active.iterrows():
             with st.container(border=True):
-                col_info, col_btn = st.columns([0.8, 0.2])
-                with col_info:
-                    st.write(f"**{row['musteri_adi']}** | {row['police_no']} | {row['sigorta_sirketi']}")
-                    st.caption(f"Vade Sonu: {row['bitis_tarihi'].strftime('%d.%m.%Y')}")
-                with col_btn:
-                    if st.button("📁 Arşivle", key=f"btn_{i}"):
-                        df.at[i, 'arsiv'] = True
-                        conn.update(worksheet="Sayfa1", data=df)
-                        st.success("Arşive gönderildi!"); st.rerun()
-    else:
-        st.info("Aktif poliçe bulunamadı.")
+                c_inf, c_btn = st.columns([0.8, 0.2])
+                c_inf.write(f"**{r['musteri_adi']}** | {r['police_no']} | {r['sigorta_sirketi']}")
+                if c_btn.button("📁 Arşivle", key=f"ar_{i}"):
+                    df.at[i, 'arsiv'] = True
+                    conn.update(worksheet="Sayfa1", data=df)
+                    st.success("Arşivlendi!"); st.rerun()
 
 elif choice == "rapor":
-    st.subheader("📊 Finansal Analiz")
-    if not df.empty:
-        # Plotly hatasını önlemek için veriyi grafiğe uygun hale getiriyoruz
-        report_df = df[(df['brut_prim'] > 0) & (df['sigorta_sirketi'] != "")].copy()
-        
-        if not report_df.empty:
-            m1, m2 = st.columns(2)
-            m1.metric("Toplam Üretim", f"{report_df['brut_prim'].sum():,.2f} TL")
-            m2.metric("Toplam Kazanç", f"{report_df['net_komisyon'].sum():,.2f} TL")
-            
-            st.plotly_chart(px.pie(report_df, values='net_komisyon', names='police_turu', title="Branş Dağılımı"), use_container_width=True)
-            st.plotly_chart(px.bar(report_df, x='sigorta_sirketi', y='brut_prim', color='police_turu', title="Şirket Performansı"), use_container_width=True)
-        else:
-            st.warning("Analiz edilecek veri bulunamadı.")
+    st.subheader("📊 Analiz")
+    # Plotly Hatasını Engelleyen Temiz Veri
+    rdf = df[(df['brut_prim'] > 0) & (df['sigorta_sirketi'] != "")].copy()
+    if not rdf.empty:
+        st.metric("Toplam Prim", f"{rdf['brut_prim'].sum():,.2f} TL")
+        st.plotly_chart(px.pie(rdf, values='net_komisyon', names='police_turu', title="Branş Dağılımı"), use_container_width=True)
+        st.plotly_chart(px.bar(rdf, x='sigorta_sirketi', y='brut_prim', title="Şirket Performansı"), use_container_width=True)
+    else: st.info("Veri yok.")
 
 elif choice == "vade":
     st.subheader("🔔 Vade Takip")
     if not df.empty:
         bugun = pd.Timestamp(datetime.now().date())
-        v_df = df[df['arsiv'] == False].copy()
-        v_df['kalan'] = (v_df['bitis_tarihi'] - bugun).dt.days
-        vade_list = v_df[v_df['kalan'] <= 30].sort_values('kalan')
-        st.dataframe(vade_list[['musteri_adi', 'police_no', 'bitis_tarihi', 'kalan']], use_container_width=True, hide_index=True)
+        vade_df = df[(df['arsiv'] == False) & (df['bitis_tarihi'].notnull())].copy()
+        vade_df['kalan'] = (vade_df['bitis_tarihi'] - bugun).dt.days
+        st.dataframe(vade_df[vade_df['kalan'] <= 30].sort_values('kalan'), use_container_width=True, hide_index=True)
 
 elif choice == "admin":
     st.subheader("🔐 Yönetici Paneli")
-    tab1, tab2 = st.tabs(["Kullanıcı Ekle", "Mevcut Kullanıcılar"])
-    
-    with tab1:
-        with st.form("user_form"):
-            new_u = st.text_input("Kullanıcı Adı")
-            new_p = st.text_input("Şifre")
-            new_r = st.selectbox("Yetki", ["user", "admin"])
-            if st.form_submit_button("Kullanıcıyı Kaydet"):
-                st.session_state.users_db[new_u] = {"pw": new_p, "role": new_r}
-                st.success(f"{new_u} eklendi.")
-    
-    with tab2:
-        st.write(st.session_state.users_db)
+    new_u = st.text_input("Yeni Kullanıcı")
+    new_p = st.text_input("Şifre")
+    if st.button("Ekle"):
+        st.session_state.users_db[new_u] = {"pw": new_p, "role": "user"}
+        st.success("Eklendi")
