@@ -4,16 +4,20 @@ import pandas as pd
 import os
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta Giriş", layout="centered")
+st.set_page_config(page_title="Takim Sigorta - Personel Paneli", layout="centered")
 
 # 1. LOGO VE GÖRSEL DÜZENLEME
-# Dosya adını tam olarak senin belirttiğin gibi güncelledim
-if os.path.exists("image_0.png.jpg"):
-    st.image("image_0.png.jpg", width=200)
+# Dosya adını logo.jpg olarak güncelledik
+if os.path.exists("logo.jpg"):
+    # Logoyu ortalamak için sütun kullanıyoruz
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("logo.jpg", use_container_width=True)
 else:
-    st.title("🛡️ TAKİM SİGORTA")
+    st.markdown("<h1 style='text-align: center; color: #cc0000;'>🛡️ TAKİM SİGORTA</h1>", unsafe_allow_html=True)
 
 # 2. KULLANICI GİRİŞ SİSTEMİ
+# Buradan personel ekleyebilir veya şifreleri değiştirebilirsin
 USER_CREDENTIALS = {
     "sercan": "takim2026",
     "personel1": "sigorta123",
@@ -25,13 +29,17 @@ def check_password():
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        st.subheader("🔑 Personel Girişi")
+        st.divider()
+        st.subheader("🔑 Personel Giriş Paneli")
         user = st.text_input("Kullanıcı Adı")
         pw = st.text_input("Şifre", type="password")
-        if st.button("Giriş Yap"):
-            if user in USER_CREDENTIALS and USER_CREDENTIALS[user] == pw:
+        
+        if st.button("Giriş Yap", use_container_width=True):
+            # Küçük/büyük harf duyarlılığını önlemek için .lower() ekledik
+            user_lower = user.lower()
+            if user_lower in USER_CREDENTIALS and USER_CREDENTIALS[user_lower] == pw:
                 st.session_state.authenticated = True
-                st.session_state.username = user
+                st.session_state.username = user_lower
                 st.rerun()
             else:
                 st.error("Hatalı kullanıcı adı veya şifre!")
@@ -39,32 +47,37 @@ def check_password():
     return True
 
 if check_password():
+    # 3. VERİTABANI (GOOGLE SHEETS) BAĞLANTISI
     conn = st.connection("gsheets", type=GSheetsConnection)
     
+    # Mevcut verileri oku
     try:
         existing_data = conn.read(worksheet="Sheet1", ttl=0)
     except:
         existing_data = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'vade_tarihi', 'tutar'])
 
-    st.sidebar.success(f"Hoş geldin, {st.session_state.username.capitalize()}")
+    # Yan Menü (Sidebar)
+    st.sidebar.title("📌 Menü")
+    st.sidebar.success(f"Personel: {st.session_state.username.upper()}")
+    
+    menu = ["Yeni Poliçe Ekle", "Poliçelerim", "Tüm Poliçeler (Admin)"]
+    choice = st.sidebar.radio("Yapmak İstediğiniz İşlem", menu)
+    
     if st.sidebar.button("Güvenli Çıkış"):
         st.session_state.authenticated = False
         st.rerun()
 
-    st.title("🛡️ Poliçe Yönetim Sistemi")
-
-    menu = ["Yeni Poliçe Ekle", "Poliçe Listesi (Kişisel)"]
-    choice = st.sidebar.selectbox("İşlem Menüsü", menu)
+    # --- SAYFA İÇERİKLERİ ---
 
     if choice == "Yeni Poliçe Ekle":
-        st.subheader("📋 Yeni Kayıt Girişi")
+        st.header("📝 Yeni Poliçe Kaydı")
         with st.form("police_form", clear_on_submit=True):
             musteri_adi = st.text_input("Müşteri Adı Soyadı")
-            police_turu = st.selectbox("Poliçe Türü", ["Trafik", "Kasko", "DASK", "Sağlık", "Konut", "Diğer"])
+            police_turu = st.selectbox("Poliçe Türü", ["Trafik", "Kasko", "DASK", "Sağlık", "Konut", "İş Yeri", "Diğer"])
             vade_tarihi = st.date_input("Vade Bitiş Tarihi")
-            tutar = st.number_input("Poliçe Tutarı (TL)", min_value=0.0, format="%.2f")
+            tutar = st.number_input("Poliçe Tutarı (TL)", min_value=0.0, step=100.0)
             
-            submit = st.form_submit_button("Sisteme Kaydet")
+            submit = st.form_submit_button("Sisteme İşle")
             
             if submit:
                 if musteri_adi:
@@ -75,21 +88,35 @@ if check_password():
                         "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d"),
                         "tutar": tutar
                     }])
+                    # Yeni satırı ekle
                     updated_df = pd.concat([existing_data, new_row], ignore_index=True)
+                    # Google Sheets'i güncelle
                     conn.update(worksheet="Sheet1", data=updated_df)
-                    st.success("Kayıt başarıyla Google Tablo'ya eklendi!")
+                    st.success(f"{musteri_adi} kaydı başarıyla tamamlandı!")
+                    st.balloons()
                 else:
-                    st.error("Müşteri adı boş bırakılamaz.")
+                    st.error("Lütfen müşteri adını giriniz.")
 
-    elif choice == "Poliçe Listesi (Kişisel)":
-        st.subheader(f"🔍 {st.session_state.username.capitalize()} - Kayıtlı Poliçeler")
+    elif choice == "Poliçelerim":
+        st.header(f"🔍 Kayıtlarım ({st.session_state.username})")
         data = conn.read(worksheet="Sheet1", ttl=0)
-        
         if not data.empty:
+            # Sadece giriş yapan personelin kayıtlarını süz
             user_data = data[data['kayit_yapan'] == st.session_state.username]
             if not user_data.empty:
                 st.dataframe(user_data, use_container_width=True)
             else:
-                st.info("Henüz size ait bir kayıt bulunamadı.")
+                st.info("Henüz eklediğiniz bir poliçe bulunmuyor.")
         else:
-            st.info("Sistemde kayıtlı veri yok.")
+            st.info("Sistemde hiç veri yok.")
+
+    elif choice == "Tüm Poliçeler (Admin)":
+        if st.session_state.username == "admin" or st.session_state.username == "sercan":
+            st.header("📊 Genel Poliçe Listesi")
+            data = conn.read(worksheet="Sheet1", ttl=0)
+            st.dataframe(data, use_container_width=True)
+            # Toplam Ciro Göstergesi
+            toplam = data['tutar'].sum()
+            st.metric("Toplam Tahsilat", f"{toplam:,.2f} TL")
+        else:
+            st.warning("Bu alanı görme yetkiniz yok!")
