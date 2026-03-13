@@ -15,7 +15,8 @@ KOMISYON_SOZLUGU = {
     "DASK": 9.75,
     "TSS": 16.25,
     "Yol yardım": 16.25,
-    "Mali Sorumluluk": 6.50
+    "Mali Sorumluluk": 6.50,
+    "Diğer": 10.00  # Diğer seçeneği geri eklendi
 }
 
 # 1. LOGO ALANI
@@ -70,10 +71,7 @@ if check_password():
         with st.form("kayit_formu", clear_on_submit=True):
             musteri_adi = st.text_input("Müşteri Adı Soyadı")
             police_turu = st.selectbox("Branş / Poliçe Türü", list(KOMISYON_SOZLUGU.keys()))
-            
-            # Seçenekler sadeleştirildi
             kaynak = st.radio("Poliçe Kaynağı", ["Öz Portföy", "Dış Acente"])
-            
             brut_prim = st.number_input("Brüt Prim (TL)", min_value=0.0, step=100.0)
             vade_tarihi = st.date_input("Vade Bitiş Tarihi")
             
@@ -81,42 +79,5 @@ if check_password():
             
             if submit:
                 if musteri_adi:
-                    # Temel Oran
                     ana_oran = KOMISYON_SOZLUGU[police_turu]
-                    
-                    # Dış Acente seçilirse oran yarıya düşer
-                    uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
-                    net_komisyon = brut_prim * (uygulanan_oran / 100)
-                    
-                    new_data = pd.DataFrame([{
-                        "kayit_yapan": st.session_state.username,
-                        "musteri_adi": musteri_adi,
-                        "police_turu": police_turu,
-                        "kaynak": kaynak,
-                        "brut_prim": brut_prim,
-                        "oran": f"%{uygulanan_oran:.2f}",
-                        "net_komisyon": net_komisyon,
-                        "vade_tarihi": vade_tarihi.strftime("%Y-%m-%d")
-                    }])
-                    
-                    updated_df = pd.concat([df, new_data], ignore_index=True)
-                    conn.update(worksheet=selected_page, data=updated_df)
-                    st.success(f"Başarıyla kaydedildi! Net Komisyon: {net_komisyon:,.2f} TL")
-                    st.balloons()
-                else:
-                    st.error("Müşteri adı boş bırakılamaz.")
-
-    elif choice == "Finansal Rapor":
-        st.header(f"🔍 {selected_page} Özeti")
-        if not df.empty:
-            # Kullanıcı filtresi
-            display_df = df if st.session_state.username in ["sercan", "admin"] else df[df['kayit_yapan'] == st.session_state.username]
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Toplam Brüt Prim", f"{display_df['brut_prim'].sum():,.2f} TL")
-            c2.metric("Toplam Net Komisyon", f"{display_df['net_komisyon'].sum():,.2f} TL")
-            
-            st.divider()
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("Henüz kayıt bulunmuyor.")
+                    uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else
