@@ -2,10 +2,11 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
+import plotly.express as px # Grafik için yeni kütüphane
 from datetime import datetime, timedelta
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Yönetim Paneli", layout="wide")
+st.set_page_config(page_title="Takim Sigorta - Analiz Paneli", layout="wide")
 
 # --- KOMİSYON ORANLARI ---
 KOMISYON_SOZLUGU = {
@@ -50,7 +51,7 @@ if check_password():
     selected_display_name = st.sidebar.selectbox("📂 Çalışma Alanı", list(page_map.keys()))
     selected_page = page_map[selected_display_name]
     
-    menu = {"➕ Poliçe Kaydet": "kaydet", "📊 Finansal Rapor & Arama": "rapor"}
+    menu = {"➕ Poliçe Kaydet": "kaydet", "📊 Rapor ve Analiz": "rapor"}
     choice = menu[st.sidebar.radio("⚙️ Menü", list(menu.keys()))]
     
     if st.sidebar.button("🔴 Güvenli Çıkış", use_container_width=True):
@@ -103,33 +104,44 @@ if check_password():
                     
                     updated_df = pd.concat([df, new_row], ignore_index=True)
                     conn.update(worksheet=selected_page, data=updated_df)
-                    st.success(f"Kayıt Tamamlandı! Net Kazanç: {komisyon:,.2f} TL")
+                    st.success(f"Kayıt Başarılı!")
                     st.balloons()
 
     elif choice == "rapor":
-        st.markdown(f"### 📊 {selected_display_name} / Veri Analizi ve Arama")
+        st.markdown(f"### 📊 {selected_display_name} / Finansal Analiz")
         
         if not df.empty:
-            # --- FİLTRELEME ALANI ---
-            with st.expander("🔍 Gelişmiş Filtreleme Seçenekleri", expanded=False):
-                f1, f2, f3 = st.columns(3)
-                search_term = f1.text_input("Müşteri Ara", placeholder="İsim yazın...")
-                filter_branch = f2.multiselect("Branş Filtrele", options=df['police_turu'].unique())
-                filter_source = f3.multiselect("Kaynak Filtrele", options=df['kaynak'].unique())
+            # Filtreleme
+            with st.expander("🔍 Filtrele ve Ara", expanded=False):
+                f1, f2 = st.columns(2)
+                search = f1.text_input("Müşteri Ara")
+                branch = f2.multiselect("Branş", options=df['police_turu'].unique())
             
-            # Filtreleri Uygula
-            filtered_df = df.copy()
-            if search_term:
-                filtered_df = filtered_df[filtered_df['musteri_adi'].str.contains(search_term, case=False, na=False)]
-            if filter_branch:
-                filtered_df = filtered_df[filtered_df['police_turu'].isin(filter_branch)]
-            if filter_source:
-                filtered_df = filtered_df[filtered_df['kaynak'].isin(filter_source)]
+            f_df = df.copy()
+            if search: f_df = f_df[f_df['musteri_adi'].str.contains(search, case=False)]
+            if branch: f_df = f_df[f_df['police_turu'].isin(branch)]
 
-            # Vade Uyarıları (Filtrelenmiş Veri Üzerinden)
-            bugun = pd.Timestamp(datetime.now().date())
-            filtered_df['kalan_gun'] = (filtered_df['bitis_tarihi'] - bugun).dt.days
-            yaklasanlar = filtered_df[(filtered_df['kalan_gun'] <= 30) & (filtered_df['kalan_gun'] >= 0)]
+            # --- GRAFİK BÖLÜMÜ (Yeni!) ---
+            st.divider()
+            col_chart1, col_chart2 = st.columns(2)
             
-            if not yaklasanlar.empty:
-                st.warning(f"🔔 Filtrelenen kayıtlarda v
+            with col_chart1:
+                st.write("**Branş Bazlı Komisyon Dağılımı**")
+                fig1 = px.pie(f_df, values='net_komisyon', names='police_turu', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                st.plotly_chart(fig1, use_container_width=True)
+                
+            with col_chart2:
+                st.write("**Kaynak Bazlı Kazanç**")
+                fig2 = px.bar(f_df.groupby('kaynak')['net_komisyon'].sum().reset_index(), x='kaynak', y='net_komisyon', color='kaynak', color_discrete_sequence=['#4CAF50', '#FF9800'])
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.divider()
+            # Özet Metrikler
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Toplam Brüt", f"{f_df['brut_prim'].sum():,.2f} TL")
+            m2.metric("Net Kazanç", f"{f_df['net_komisyon'].sum():,.2f} TL")
+            m3.metric("Kayıt Sayısı", len(f_df))
+            
+            st.dataframe(f_df, use_container_width=True)
+        else:
+            st.info("Henüz veri yok.")
