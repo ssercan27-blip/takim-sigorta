@@ -37,15 +37,19 @@ def load_data():
     try:
         raw_df = conn.read(worksheet="Sayfa1", ttl=0)
         if raw_df is None or raw_df.empty: return pd.DataFrame()
+        # Sütun isimlerini normalize et
         raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
+        
+        # Tarih ve Sayısal Dönüştürme (Hataları önlemek için)
         for col in ['tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi']:
             if col in raw_df.columns:
                 raw_df[col] = pd.to_datetime(raw_df[col], errors='coerce')
+        
         for col in ['brut_prim', 'net_komisyon']:
             if col in raw_df.columns:
                 raw_df[col] = pd.to_numeric(raw_df[col].astype(str).str.replace(',',''), errors='coerce').fillna(0)
         return raw_df
-    except:
+    except Exception as e:
         return pd.DataFrame()
 
 # 1. OTURUM KONTROLÜ
@@ -108,7 +112,8 @@ if choice == "kaydet":
                 new_row = pd.DataFrame([{
                     "kayit_yapan": st.session_state.username, "police_no": str(p_no), "musteri_adi": musteri,
                     "sigorta_sirketi": sirket, "police_turu": brans, "brut_prim": prim, "net_komisyon": kazanc,
-                    "tanzim_tarihi": tanzim, "baslangic_tarihi": baslangic, "bitis_tarihi": bitis_tarihi, "telefon": tel
+                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"), 
+                    "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), "telefon": tel
                 }])
                 conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
                 st.success("Poliçe Başarıyla Kaydedildi!"); st.rerun()
@@ -124,44 +129,34 @@ elif choice == "takip":
             if kalan <= 15: return "🟡 Vade Yaklaştı"
             return "🟢 Güncel"
         df['durum'] = df['bitis_tarihi'].apply(durum_belirle)
-
-        # Üst Metrikler
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Toplam Poliçe", len(df))
-        c2.metric("Güncel Poliçe", len(df[df['durum'] == "🟢 Güncel"]))
-        c3.metric("Vadesi Yaklaşan (15 Gün)", len(df[df['durum'] == "🟡 Vade Yaklaştı"]))
-
-        search = st.text_input("🔍 Hızlı Ara (İsim/No/Plaka)")
-        filtre = st.radio("Durum Filtresi:", ["Tümü", "🟢 Güncel", "🟡 Vade Yaklaştı", "🔴 Vadesi Geçmiş"], horizontal=True)
-        
+        search = st.text_input("🔍 Hızlı Ara")
+        filtre = st.radio("Filtre:", ["Tümü", "🟢 Güncel", "🟡 Vade Yaklaştı", "🔴 Vadesi Geçmiş"], horizontal=True)
         d_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)] if search else df
         if filtre != "Tümü": d_df = d_df[d_df['durum'] == filtre]
-
-        st.dataframe(d_df.sort_values('bitis_tarihi'), use_container_width=True, hide_index=True,
-                     column_config={"durum": "Durum", "brut_prim": st.column_config.NumberColumn("Prim", format="%.2f TL"),
-                                    "bitis_tarihi": st.column_config.DateColumn("Vade Sonu", format="DD.MM.YYYY")})
+        st.dataframe(d_df.sort_values('bitis_tarihi'), use_container_width=True, hide_index=True)
 
 elif choice == "rapor":
     st.subheader("📊 Finansal Analiz")
-    if not df.empty:
-        c1, c2 = st.columns(2)
-        c1.metric("Toplam Prim Üretimi", f"{df['brut_prim'].sum():,.2f} TL")
-        c2.metric("Toplam Net Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
+    if not df.empty and 'sigorta_sirketi' in df.columns:
+        # Boş satırları grafiğe dahil etme
+        df_clean = df.dropna(subset=['sigorta_sirketi', 'brut_prim'])
         
-        st.plotly_chart(px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı"), use_container_width=True)
-        st.plotly_chart(px.bar(df, x='sigorta_sirketi', y='brut_prim', color='sigorta_sirketi', title="Şirket Bazlı Performans"), use_container_width=True)
+        c1, c2 = st.columns(2)
+        c1.metric("Toplam Prim", f"{df_clean['brut_prim'].sum():,.2f} TL")
+        c2.metric("Toplam Komisyon", f"{df_clean['net_komisyon'].sum():,.2f} TL")
+        
+        if not df_clean.empty:
+            st.plotly_chart(px.pie(df_clean, values='net_komisyon', names='police_turu', title="Branş Dağılımı"), use_container_width=True)
+            st.plotly_chart(px.bar(df_clean, x='sigorta_sirketi', y='brut_prim', color='sigorta_sirketi', title="Şirket Bazlı Performans"), use_container_width=True)
+        else:
+            st.warning("Grafik oluşturmak için yeterli veri bulunamadı.")
+    else:
+        st.info("Analiz için henüz kayıtlı veri yok.")
 
 elif choice == "vade":
-    st.subheader("🔔 Vade Takip Merkezi")
+    st.subheader("🔔 Vade Takip")
     if not df.empty:
         bugun = pd.Timestamp(datetime.now().date())
         df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
         vade_df = df[df['kalan_gun'] <= 30].sort_values('kalan_gun')
-        
-        if not vade_df.empty:
-            st.warning(f"Önümüzdeki 30 gün içinde vadesi dolacak {len(vade_df)} poliçe var.")
-            st.dataframe(vade_df[['musteri_adi', 'police_no', 'sigorta_sirketi', 'bitis_tarihi', 'kalan_gun']], 
-                         use_container_width=True, hide_index=True,
-                         column_config={"kalan_gun": "Kalan Gün", "bitis_tarihi": st.column_config.DateColumn("Bitiş", format="DD.MM.YYYY")})
-        else:
-            st.success("Harika! Önümüzdeki 30 gün içinde vadesi dolacak poliçe bulunmuyor.")
+        st.dataframe(vade_df[['musteri_adi', 'police_no', 'bitis_tarihi', 'kalan_gun']], use_container_width=True, hide_index=True)
