@@ -1,78 +1,107 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# --- BRANŞ VE KOMİSYON AYARLARI ---
+# --- SAYFA AYARLARI ---
+st.set_page_config(page_title="Takim Sigorta | Yönetim Paneli", layout="wide")
+
+# --- KULLANICI YÖNETİMİ ---
+if "users_db" not in st.session_state:
+    st.session_state.users_db = {
+        "sercan": {"pw": "takim2026", "role": "admin"},
+        "admin": {"pw": "admin44", "role": "admin"}
+    }
+
+# --- SABİT LİSTELER ---
 KOMISYON_ORANLARI = {
     "Trafik": 6.50, "Kasko": 9.50, "Konut": 20.00, "İşyeri": 12.00,
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-SIRKETLER = sorted([
-    "Aksigorta", "Allianz Sigorta", "Anadolu Sigorta", "Ankara Sigorta", "Axa Sigorta", 
-    "Doğa Sigorta", "HDI Sigorta", "Mapfre Sigorta", "Sompo Sigorta", "Türkiye Sigorta"
-]) + ["Diğer"]
+# --- LOGO KONTROL ---
+def get_logo():
+    for ext in ["jpg", "png", "jpeg"]:
+        if os.path.exists(f"logo.{ext}"): return f"logo.{ext}"
+    return None
 
-def render_yeni_police(df, conn):
-    st.markdown("### 📝 Yeni Poliçe Kayıt Merkezi")
-    st.info("Lütfen poliçe bilgilerini eksiksiz giriniz. Komisyon ve Vade otomatik hesaplanacaktır.")
+# --- VERİ BAĞLANTISI ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-    with st.form("yeni_kayit_formu", clear_on_submit=True):
-        # Üst Panel: Müşteri ve No
-        c1, c2 = st.columns(2)
-        p_no = c1.text_input("🔢 Poliçe Numarası", placeholder="Örn: 12345678")
-        m_adi = c2.text_input("👤 Müşteri Adı Soyadı", placeholder="Örn: Ahmet Yılmaz")
-
-        # Orta Panel: Şirket ve Branş
-        c3, c4, c5 = st.columns(3)
-        sirket = c3.selectbox("🏢 Sigorta Şirketi", SIRKETLER)
-        brans = c4.selectbox("📑 Branş", list(KOMISYON_ORANLARI.keys()))
-        prim = c5.number_input("💰 Brüt Prim (TL)", min_value=0.0, step=100.0, format="%.2f")
-
-        # Alt Panel: Tarihler
-        st.divider()
-        t1, t2 = st.columns(2)
-        tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now())
-        sure = t2.selectbox("⏳ Poliçe Süresi", ["1 Yıllık", "6 Aylık", "2 Aylık"])
+def load_data():
+    try:
+        raw_df = conn.read(worksheet="Sayfa1", ttl=0)
+        if raw_df is None or raw_df.empty:
+            return pd.DataFrame(columns=['police_no', 'musteri_adi', 'sigorta_sirketi', 'police_turu', 'brut_prim', 'net_komisyon', 'tanzim_tarihi', 'bitis_tarihi', 'arsiv'])
         
-        # Otomatik Hesaplamalar
-        if sure == "1 Yıllık": bitis = tanzim + relativedelta(years=1)
-        elif sure == "6 Aylık": bitis = tanzim + relativedelta(months=6)
-        else: bitis = tanzim + relativedelta(months=2)
+        # Sütun isimlerini normalize et
+        raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
+        return raw_df
+    except:
+        return pd.DataFrame()
 
-        st.warning(f"💡 Otomatik Vade Sonu: **{bitis.strftime('%d.%m.%Y')}**")
+# --- GİRİŞ KONTROLÜ ---
+if "authenticated" not in st.session_state: st.session_state.authenticated = False
 
-        # Gönderme Butonu
-        submit = st.form_submit_button("🚀 POLİÇEYİ SİSTEME İŞLE", use_container_width=True)
+if not st.session_state.authenticated:
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
+        logo = get_logo()
+        if logo: st.image(logo, use_container_width=True)
+        st.subheader("🛡️ Takim Sigorta Giriş")
+        u = st.text_input("Kullanıcı Adı").lower()
+        p = st.text_input("Şifre", type="password")
+        if st.button("SİSTEMİ BAŞLAT", use_container_width=True):
+            if u in st.session_state.users_db and st.session_state.users_db[u]["pw"] == p:
+                st.session_state.authenticated = True
+                st.session_state.username = u
+                st.rerun()
+            else: st.error("Kullanıcı adı veya şifre hatalı!")
+    st.stop()
 
-        if submit:
+# --- ANA PROGRAM ---
+df = load_data()
+st.sidebar.title(f"👤 {st.session_state.username.upper()}")
+choice = st.sidebar.radio("İşlem Menüsü", ["📝 Yeni Poliçe", "🔎 Poliçe Takibi", "📊 Analiz"])
+
+if choice == "📝 Yeni Poliçe":
+    st.markdown("### 📝 Yeni Poliçe Kayıt Ekranı")
+    
+    with st.form("yeni_police_formu", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        p_no = col1.text_input("Poliçe Numarası")
+        m_adi = col2.text_input("Müşteri Ad Soyad")
+        
+        col3, col4, col5 = st.columns(3)
+        sirket = col3.selectbox("Şirket", ["Aksigorta", "Allianz", "Anadolu", "Axa", "Türkiye", "Diğer"])
+        brans = col4.selectbox("Branş", list(KOMISYON_ORANLARI.keys()))
+        prim = col5.number_input("Brüt Prim (TL)", min_value=0.0)
+        
+        tanzim = st.date_input("Tanzim Tarihi", datetime.now())
+        bitis = tanzim + relativedelta(years=1)
+        
+        st.write(f"💡 Otomatik Vade Sonu: **{bitis.strftime('%d.%m.%Y')}**")
+        
+        if st.form_submit_button("✅ POLİÇEYİ KAYDET"):
             if p_no and m_adi and prim > 0:
-                # Komisyon Hesabı
                 kazanc = prim * (KOMISYON_ORANLARI[brans] / 100)
-                
-                # Yeni Satır Oluşturma
-                new_data = pd.DataFrame([{
-                    "police_no": str(p_no),
-                    "musteri_adi": str(m_adi).upper(),
-                    "sigorta_sirketi": sirket,
-                    "police_turu": brans,
-                    "brut_prim": float(prim),
-                    "net_komisyon": float(kazanc),
-                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"),
-                    "bitis_tarihi": bitis.strftime("%Y-%m-%d"),
-                    "arsiv": False # Her yeni kayıt aktiftir
+                new_row = pd.DataFrame([{
+                    "police_no": str(p_no), "musteri_adi": m_adi.upper(), "sigorta_sirketi": sirket,
+                    "police_turu": brans, "brut_prim": prim, "net_komisyon": kazanc,
+                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "bitis_tarihi": bitis.strftime("%Y-%m-%d"),
+                    "arsiv": False
                 }])
-
-                # Google Sheets Güncelleme
-                try:
-                    updated_df = pd.concat([df, new_data], ignore_index=True)
-                    conn.update(worksheet="Sayfa1", data=updated_df)
-                    st.balloons()
-                    st.success(f"✅ {m_adi} adına {brans} poliçesi başarıyla kaydedildi!")
-                except Exception as e:
-                    st.error(f"Veri gönderilirken hata oluştu: {e}")
+                conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
+                st.success("Poliçe başarıyla kaydedildi!")
+                st.rerun()
             else:
-                st.error("Lütfen Poliçe No, Müşteri Adı ve Prim alanlarını boş bırakmayın!")
+                st.error("Lütfen tüm alanları doldurun!")
 
-# Bu fonksiyonu ana kodundaki 'choice == "yeni"' kısmına yapıştıracağız.
+# Diğer menüler için boş iskelet (bozulmaması için)
+elif choice == "🔎 Poliçe Takibi":
+    st.info("Bu bölüm bir sonraki adımda entegre edilecektir. Şu an 'Yeni Poliçe' aktif.")
+
+elif choice == "📊 Analiz":
+    st.info("Bu bölüm bir sonraki adımda entegre edilecektir. Şu an 'Yeni Poliçe' aktif.")
