@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Yönetim Paneli", layout="wide")
+st.set_page_config(page_title="Takim Sigorta - Analiz Paneli", layout="wide")
 
 # --- KOMİSYON ORANLARI ---
 KOMISYON_SOZLUGU = {
@@ -61,6 +61,7 @@ if check_password():
     # --- VERİ OKUMA ---
     try:
         df = conn.read(worksheet=selected_page, ttl=0)
+        # Tarih dönüşümleri
         df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'])
         df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'])
         df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'])
@@ -104,17 +105,18 @@ if check_password():
                     
                     updated_df = pd.concat([df, new_row], ignore_index=True)
                     conn.update(worksheet=selected_page, data=updated_df)
-                    st.success(f"Kayıt Başarılı!")
+                    st.success(f"Poliçe Başarıyla Kaydedildi!")
                     st.balloons()
 
     elif choice == "rapor":
-        st.markdown(f"### 📊 {selected_display_name} / Finansal Analiz")
+        st.markdown(f"### 📊 {selected_display_name} / Finansal Durum")
         
         if not df.empty:
-            with st.expander("🔍 Filtrele ve Ara", expanded=False):
+            # Filtre Paneli
+            with st.expander("🔍 Gelişmiş Arama ve Filtrele", expanded=False):
                 f1, f2 = st.columns(2)
-                search = f1.text_input("Müşteri Ara")
-                branch = f2.multiselect("Branş", options=df['police_turu'].unique())
+                search = f1.text_input("Müşteri Adı")
+                branch = f2.multiselect("Branş Seç", options=df['police_turu'].unique())
             
             f_df = df.copy()
             if search: f_df = f_df[f_df['musteri_adi'].str.contains(search, case=False, na=False)]
@@ -123,28 +125,30 @@ if check_password():
             # --- GRAFİKLER ---
             if not f_df.empty:
                 st.divider()
-                col_chart1, col_chart2 = st.columns(2)
+                c_col1, c_col2 = st.columns(2)
                 
-                with col_chart1:
+                with c_col1:
                     st.write("**Branş Bazlı Komisyon Dağılımı**")
-                    fig1 = px.pie(f_df, values='net_komisyon', names='police_turu', hole=0.4)
+                    fig1 = px.pie(f_df, values='net_komisyon', names='police_turu', hole=0.4, 
+                                  color_discrete_sequence=px.colors.qualitative.Set3)
                     st.plotly_chart(fig1, use_container_width=True)
                     
-                with col_chart2:
-                    st.write("**Kaynak Bazlı Kazanç**")
-                    # Gruplama hatasını önlemek için kontrol
-                    source_data = f_df.groupby('kaynak')['net_komisyon'].sum().reset_index()
-                    fig2 = px.bar(source_data, x='kaynak', y='net_komisyon', color='kaynak')
+                with c_col2:
+                    st.write("**Kaynak Bazlı Performans**")
+                    source_summary = f_df.groupby('kaynak')['net_komisyon'].sum().reset_index()
+                    fig2 = px.bar(source_summary, x='kaynak', y='net_komisyon', color='kaynak',
+                                  color_discrete_map={'Öz Portföy': '#2ecc71', 'Dış Acente': '#e67e22'})
                     st.plotly_chart(fig2, use_container_width=True)
 
                 st.divider()
+                # Özet Kartlar
                 m1, m2, m3 = st.columns(3)
-                m1.metric("Toplam Brüt", f"{f_df['brut_prim'].sum():,.2f} TL")
-                m2.metric("Net Kazanç", f"{f_df['net_komisyon'].sum():,.2f} TL")
-                m3.metric("Kayıt Sayısı", len(f_df))
+                m1.metric("Toplam Brüt Prim", f"{f_df['brut_prim'].sum():,.2f} TL")
+                m2.metric("Toplam Net Komisyon", f"{f_df['net_komisyon'].sum():,.2f} TL")
+                m3.metric("Poliçe Adedi", len(f_df))
                 
                 st.dataframe(f_df, use_container_width=True)
             else:
-                st.warning("Aranan kriterlere uygun kayıt bulunamadı.")
+                st.warning("Eşleşen kayıt bulunamadı.")
         else:
-            st.info("Henüz veri yok.")
+            st.info("Sistemde henüz kayıtlı poliçe bulunmuyor.")
