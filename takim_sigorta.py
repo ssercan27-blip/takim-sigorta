@@ -36,18 +36,25 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def load_data():
     try:
         raw_df = conn.read(worksheet="Sayfa1", ttl=0)
-        if raw_df is None or raw_df.empty: return pd.DataFrame()
+        if raw_df is None or raw_df.empty:
+            # Boşsa iskelet oluştur
+            return pd.DataFrame(columns=['police_no', 'musteri_adi', 'sigorta_sirketi', 'police_turu', 'brut_prim', 'net_komisyon', 'bitis_tarihi', 'arsiv'])
+        
+        # SÜTUN TEMİZLİĞİ VE SABİTLEME (Hataları önleyen kritik kısım)
         raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
         
-        # Sütunları Garanti Altına Al
-        for col in ['brut_prim', 'net_komisyon']:
-            if col in raw_df.columns:
-                raw_df[col] = pd.to_numeric(raw_df[col].astype(str).str.replace(',',''), errors='coerce').fillna(0)
+        # Eğer beklenen sütunlar yoksa hata vermemesi için boş ekle
+        expected = ['police_no', 'musteri_adi', 'sigorta_sirketi', 'police_turu', 'brut_prim', 'net_komisyon', 'bitis_tarihi', 'arsiv']
+        for col in expected:
+            if col not in raw_df.columns:
+                raw_df[col] = False if col == 'arsiv' else (0 if col in ['brut_prim', 'net_komisyon'] else "")
         
-        if 'bitis_tarihi' in raw_df.columns:
-            raw_df['bitis_tarihi'] = pd.to_datetime(raw_df['bitis_tarihi'], errors='coerce')
+        # Veri Tiplerini Zorla
+        raw_df['brut_prim'] = pd.to_numeric(raw_df['brut_prim'].astype(str).str.replace(',',''), errors='coerce').fillna(0)
+        raw_df['net_komisyon'] = pd.to_numeric(raw_df['net_komisyon'].astype(str).str.replace(',',''), errors='coerce').fillna(0)
+        raw_df['bitis_tarihi'] = pd.to_datetime(raw_df['bitis_tarihi'], errors='coerce')
+        raw_df['arsiv'] = raw_df['arsiv'].apply(lambda x: True if str(x).lower() == 'true' else False)
         
-        if 'arsiv' not in raw_df.columns: raw_df['arsiv'] = False
         return raw_df
     except:
         return pd.DataFrame()
@@ -84,9 +91,8 @@ choice = opt[st.sidebar.radio("Menü", list(opt.keys()))]
 if choice == "kaydet":
     st.subheader("📝 Yeni Poliçe Girişi")
     with st.form("p_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        p_no = c1.text_input("Poliçe No")
-        m_adi = c2.text_input("Müşteri Ad Soyad")
+        p_no = st.text_input("Poliçe No")
+        m_adi = st.text_input("Müşteri Ad Soyad")
         sirket = st.selectbox("Sigorta Şirketi", ["Aksigorta", "Allianz", "Anadolu", "Axa", "Türkiye", "Diğer"])
         brans = st.selectbox("Branş", list(KOMISYON_SOZLUGU.keys()))
         prim = st.number_input("Brüt Prim (TL)", min_value=0.0)
@@ -99,54 +105,59 @@ if choice == "kaydet":
             st.success("Kayıt Başarılı!"); st.rerun()
 
 elif choice == "takip":
-    st.subheader("🔎 Poliçe Takibi (Renkli Durum)")
+    st.subheader("🔎 Poliçe Takibi")
     if not df.empty:
         bugun = pd.Timestamp(datetime.now().date())
+        # Sadece arşivlenmemişleri filtrele
         active = df[df['arsiv'] == False].copy()
         
-        for i, r in active.iterrows():
-            kalan = (r['bitis_tarihi'] - bugun).days if pd.notnull(r['bitis_tarihi']) else 999
-            # Renk ve Durum Belirleme
-            if kalan < 0: color, label = "🔴", "Vadesi Geçmiş"
-            elif kalan <= 15: color, label = "🟡", "Vade Yaklaştı"
-            else: color, label = "🟢", "Güncel"
-            
-            with st.container(border=True):
-                col_i, col_b = st.columns([0.8, 0.2])
-                col_i.write(f"{color} **{r['musteri_adi']}** | {r['police_no']} | {label}")
-                col_i.caption(f"Şirket: {r['sigorta_sirketi']} | Vade: {r['bitis_tarihi'].strftime('%d.%m.%Y')}")
-                if col_b.button("📁 Arşivle", key=f"ar_{i}"):
-                    df.at[i, 'arsiv'] = True
-                    conn.update(worksheet="Sayfa1", data=df)
-                    st.success("Arşivlendi!"); st.rerun()
+        if active.empty:
+            st.info("Gösterilecek aktif poliçe bulunmuyor.")
+        else:
+            for i, r in active.iterrows():
+                # Vade hesaplama ve lamba rengi
+                kalan = (r['bitis_tarihi'] - bugun).days if pd.notnull(r['bitis_tarihi']) else 999
+                if kalan < 0: icon, label = "🔴", "Vadesi Geçmiş"
+                elif kalan <= 15: icon, label = "🟡", "Vade Yaklaştı"
+                else: icon, label = "🟢", "Güncel"
+                
+                with st.container(border=True):
+                    col_text, col_act = st.columns([0.8, 0.2])
+                    with col_text:
+                        st.write(f"{icon} **{r['musteri_adi']}** | {r['police_no']} | {label}")
+                        st.caption(f"Şirket: {r['sigorta_sirketi']} | Vade: {r['bitis_tarihi'].strftime('%d.%m.%Y') if pd.notnull(r['bitis_tarihi']) else 'Belirsiz'}")
+                    with col_act:
+                        if st.button("📁 Arşivle", key=f"ars_{i}"):
+                            df.at[i, 'arsiv'] = True
+                            conn.update(worksheet="Sayfa1", data=df)
+                            st.rerun()
 
 elif choice == "rapor":
-    st.subheader("📊 Finansal Analiz")
+    st.subheader("📊 Analiz")
+    # Sayısal veri olanları süz
     rdf = df[df['brut_prim'] > 0].copy()
     if not rdf.empty:
-        c1, c2 = st.columns(2)
-        c1.metric("Toplam Üretim", f"{rdf['brut_prim'].sum():,.2f} TL")
-        c2.metric("Toplam Kazanç", f"{rdf['net_komisyon'].sum():,.2f} TL")
-        st.plotly_chart(px.pie(rdf, values='net_komisyon', names='police_turu', title="Branş Dağılımı"), use_container_width=True)
+        st.metric("Toplam Üretim", f"{rdf['brut_prim'].sum():,.2f} TL")
+        st.plotly_chart(px.pie(rdf, values='net_komisyon', names='police_turu', title="Kazanç Dağılımı"), use_container_width=True)
     else:
-        st.warning("Henüz prim girişi yapılmadığı için analiz oluşturulamıyor.")
+        st.warning("Henüz analiz edilecek veri yok.")
 
 elif choice == "admin":
     st.subheader("🔐 Yönetici Paneli")
-    # Mevcut Kullanıcıları Listeleme ve Düzenleme
-    st.write("### Mevcut Kullanıcılar")
+    # Kullanıcı Listesi ve Yetki Değiştirme
+    st.write("### Kullanıcı Yönetimi")
     for u_name, u_info in st.session_state.users_db.items():
-        col_u, col_r, col_btn = st.columns([2, 2, 1])
-        col_u.write(f"👤 **{u_name}**")
-        new_role = col_r.selectbox(f"Yetki Değiştir ({u_name})", ["admin", "user"], index=0 if u_info['role'] == "admin" else 1, key=f"role_{u_name}")
-        if col_btn.button("Güncelle", key=f"upd_{u_name}"):
-            st.session_state.users_db[u_name]['role'] = new_role
-            st.success("Yetki güncellendi!")
-
+        c_u, c_r, c_b = st.columns([2, 2, 1])
+        c_u.write(f"👤 **{u_name}**")
+        new_r = c_r.selectbox(f"Yetki ({u_name})", ["admin", "user"], index=0 if u_info['role'] == "admin" else 1, key=f"adm_{u_name}")
+        if c_b.button("Güncelle", key=f"up_btn_{u_name}"):
+            st.session_state.users_db[u_name]['role'] = new_r
+            st.success("Güncellendi!")
+    
     st.divider()
     with st.expander("➕ Yeni Kullanıcı Ekle"):
-        nu = st.text_input("Yeni Kullanıcı")
+        nu = st.text_input("Yeni İsim")
         np = st.text_input("Yeni Şifre")
-        if st.button("Kaydet"):
+        if st.button("Ekle"):
             st.session_state.users_db[nu] = {"pw": np, "role": "user"}
-            st.success("Kullanıcı eklendi.")
+            st.rerun()
