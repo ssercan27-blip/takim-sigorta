@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 import urllib.parse
 
 # Sayfa Ayarları
@@ -94,12 +95,24 @@ if choice == "kaydet":
         
         st.divider()
         t1, t2, t3 = st.columns(3)
-        tanzim = t1.date_input("📅 Tanzim", datetime.now())
-        baslangic = t2.date_input("🚀 Başlangıç", datetime.now())
-        bitis = t3.date_input("🏁 Bitiş", baslangic + timedelta(days=365))
+        tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now())
+        baslangic = t2.date_input("🚀 Başlangıç Tarihi", datetime.now())
+        
+        # SÜRE SEÇİMİ VE OTOMATİK HESAPLAMA
+        sure_secenekleri = {
+            "1 Yıllık": relativedelta(years=1),
+            "6 Aylık": relativedelta(months=6),
+            "3 Aylık": relativedelta(months=3),
+            "2 Aylık": relativedelta(months=2),
+            "1 Aylık": relativedelta(months=1)
+        }
+        sure_etiket = t3.selectbox("⏳ Poliçe Süresi", list(sure_secenekleri.keys()))
+        
+        # Bitiş tarihini otomatik hesapla
+        bitis_tarihi = baslangic + sure_secenekleri[sure_etiket]
+        st.caption(f"ℹ️ Hesaplanan Bitiş Tarihi: **{bitis_tarihi.strftime('%d.%m.%Y')}**")
         
         if st.form_submit_button("✅ SİSTEME KAYDET"):
-            # ARKA PLAN KONTROLÜ: Tüm alanlar dolu mu?
             if all([p_no, musteri, tel, brans, prim > 0]):
                 oran = KOMISYON_SOZLUGU[brans]
                 uyg_oran = oran / 2 if kaynak == "Dış Acente" else oran
@@ -116,16 +129,16 @@ if choice == "kaydet":
                     "net_komisyon": kazanc,
                     "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), 
                     "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
-                    "bitis_tarihi": bitis.strftime("%Y-%m-%d"), 
+                    "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), 
                     "telefon": tel
                 }])
                 
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(worksheet=selected_page, data=updated_df)
-                st.success(f"Poliçe {p_no} başarıyla sisteme işlendi.")
+                st.success(f"Poliçe {p_no} kaydedildi. Bitiş: {bitis_tarihi.strftime('%d.%m.%Y')}")
                 st.balloons()
             else:
-                st.error("⚠️ Lütfen tüm alanları eksiksiz doldurduğunuzdan emin olun (Poliçe No, İsim, Tel ve Prim alanları boş bırakılamaz).")
+                st.error("⚠️ Lütfen zorunlu alanları (No, İsim, Tel, Prim) doldurun.")
 
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takip ve Arama")
@@ -157,40 +170,4 @@ elif choice == "rapor":
             fig1 = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı", hole=0.4)
             st.plotly_chart(fig1, use_container_width=True)
         with c2:
-            df['ay'] = df['tanzim_tarihi'].dt.strftime('%Y-%m')
-            aylik = df.groupby('ay')['net_komisyon'].sum().reset_index()
-            fig2 = px.line(aylik, x='ay', y='net_komisyon', title="Aylık Kazanç Trendi", markers=True)
-            st.plotly_chart(fig2, use_container_width=True)
-
-elif choice == "cari":
-    st.subheader("👤 Müşteri Detayları")
-    if not df.empty:
-        df['benzersiz_musteri'] = df['musteri_adi'].astype(str) + " - " + df['telefon'].astype(str)
-        secilen = st.selectbox("Müşteri Seçin", ["Seçiniz..."] + sorted(list(df['benzersiz_musteri'].unique())))
-        
-        if secilen != "Seçiniz...":
-            m_df = df[df['benzersiz_musteri'] == secilen]
-            st.info(f"**Müşteri:** {secilen} | **Poliçe Sayısı:** {len(m_df)}")
-            st.dataframe(m_df[['police_no', 'police_turu', 'brut_prim', 'tanzim_tarihi', 'bitis_tarihi']], use_container_width=True, hide_index=True)
-
-elif choice == "vade":
-    st.subheader("🔔 Vade Takip Merkezi")
-    if not df.empty:
-        bugun = pd.Timestamp(datetime.now().date())
-        df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
-        vade_df = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= -5)].sort_values('kalan_gun')
-        
-        if not vade_df.empty:
-            for _, row in vade_df.iterrows():
-                with st.container(border=True):
-                    col1, col2 = st.columns([3, 1])
-                    durum = "🔴" if row['kalan_gun'] < 0 else "🟠"
-                    col1.markdown(f"### {durum} {row['musteri_adi']}")
-                    col1.write(f"**Poliçe No:** {row['police_no']} | **Vade:** {row['bitis_tarihi'].strftime('%d.%m.%Y')}")
-                    
-                    tel = str(row['telefon']).strip()
-                    if not tel.startswith('90') and len(tel) > 0: tel = "90" + (tel[1:] if tel.startswith('0') else tel)
-                    msg = f"Sayın {row['musteri_adi']}, Takim Sigorta'dan hatırlatırız: {row['police_no']} nolu poliçe vadeniz dolmaktadır."
-                    wa_url = f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
-                    col2.link_button("💬 Hatırlat", wa_url, use_container_width=True)
-        else: st.success("Yakın zamanda vadesi dolacak poliçe yok.")
+            df['ay'] = df['tanzim
