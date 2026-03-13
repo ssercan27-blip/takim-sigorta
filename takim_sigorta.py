@@ -2,11 +2,11 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
-import plotly.express as px # Grafik için yeni kütüphane
+import plotly.express as px
 from datetime import datetime, timedelta
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Analiz Paneli", layout="wide")
+st.set_page_config(page_title="Takim Sigorta - Yönetim Paneli", layout="wide")
 
 # --- KOMİSYON ORANLARI ---
 KOMISYON_SOZLUGU = {
@@ -111,37 +111,40 @@ if check_password():
         st.markdown(f"### 📊 {selected_display_name} / Finansal Analiz")
         
         if not df.empty:
-            # Filtreleme
             with st.expander("🔍 Filtrele ve Ara", expanded=False):
                 f1, f2 = st.columns(2)
                 search = f1.text_input("Müşteri Ara")
                 branch = f2.multiselect("Branş", options=df['police_turu'].unique())
             
             f_df = df.copy()
-            if search: f_df = f_df[f_df['musteri_adi'].str.contains(search, case=False)]
+            if search: f_df = f_df[f_df['musteri_adi'].str.contains(search, case=False, na=False)]
             if branch: f_df = f_df[f_df['police_turu'].isin(branch)]
 
-            # --- GRAFİK BÖLÜMÜ (Yeni!) ---
-            st.divider()
-            col_chart1, col_chart2 = st.columns(2)
-            
-            with col_chart1:
-                st.write("**Branş Bazlı Komisyon Dağılımı**")
-                fig1 = px.pie(f_df, values='net_komisyon', names='police_turu', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-                st.plotly_chart(fig1, use_container_width=True)
+            # --- GRAFİKLER ---
+            if not f_df.empty:
+                st.divider()
+                col_chart1, col_chart2 = st.columns(2)
                 
-            with col_chart2:
-                st.write("**Kaynak Bazlı Kazanç**")
-                fig2 = px.bar(f_df.groupby('kaynak')['net_komisyon'].sum().reset_index(), x='kaynak', y='net_komisyon', color='kaynak', color_discrete_sequence=['#4CAF50', '#FF9800'])
-                st.plotly_chart(fig2, use_container_width=True)
+                with col_chart1:
+                    st.write("**Branş Bazlı Komisyon Dağılımı**")
+                    fig1 = px.pie(f_df, values='net_komisyon', names='police_turu', hole=0.4)
+                    st.plotly_chart(fig1, use_container_width=True)
+                    
+                with col_chart2:
+                    st.write("**Kaynak Bazlı Kazanç**")
+                    # Gruplama hatasını önlemek için kontrol
+                    source_data = f_df.groupby('kaynak')['net_komisyon'].sum().reset_index()
+                    fig2 = px.bar(source_data, x='kaynak', y='net_komisyon', color='kaynak')
+                    st.plotly_chart(fig2, use_container_width=True)
 
-            st.divider()
-            # Özet Metrikler
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Toplam Brüt", f"{f_df['brut_prim'].sum():,.2f} TL")
-            m2.metric("Net Kazanç", f"{f_df['net_komisyon'].sum():,.2f} TL")
-            m3.metric("Kayıt Sayısı", len(f_df))
-            
-            st.dataframe(f_df, use_container_width=True)
+                st.divider()
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Toplam Brüt", f"{f_df['brut_prim'].sum():,.2f} TL")
+                m2.metric("Net Kazanç", f"{f_df['net_komisyon'].sum():,.2f} TL")
+                m3.metric("Kayıt Sayısı", len(f_df))
+                
+                st.dataframe(f_df, use_container_width=True)
+            else:
+                st.warning("Aranan kriterlere uygun kayıt bulunamadı.")
         else:
             st.info("Henüz veri yok.")
