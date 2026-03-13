@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import urllib.parse
+import plotly.express as px
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Takim Sigorta | Yönetim Paneli", layout="wide")
@@ -22,19 +23,13 @@ KOMISYON_SOZLUGU = {
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-# 1. OTURUM DURUMUNU BAŞLATMA (Hata Alan Kısım Burasıydı)
+# 1. OTURUM BAŞLATMA
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "role" not in st.session_state:
-    st.session_state.role = None  # Giriş yapılana kadar rol boş kalsın
+    st.session_state.role = None
 
-# 2. LOGO VE SIDEBAR
-if os.path.exists("logo.jpg"):
-    st.sidebar.image("logo.jpg", use_container_width=True)
-else:
-    st.sidebar.markdown("<h2 style='text-align: center; color: #cc0000;'>🛡️ TAKİM SİGORTA</h2>", unsafe_allow_html=True)
-
-# 3. GİRİŞ KONTROLÜ
+# 2. GİRİŞ KONTROLÜ
 if not st.session_state.authenticated:
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
@@ -51,31 +46,47 @@ if not st.session_state.authenticated:
                 st.error("Giriş başarısız!")
     st.stop()
 
-# --- VERİ BAĞLANTISI ---
+# --- VERİ BAĞLANTISI VE OKUMA ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 page_map = {"Ana Portföy": "Sayfa1", "Ek Kayıtlar": "Sayfa2", "Arşiv": "Sayfa3"}
-selected_page = page_map[st.sidebar.selectbox("📂 Veri Tabanı", list(page_map.keys()))]
+selected_page = st.sidebar.selectbox("📂 Veri Tabanı", list(page_map.keys()))
+worksheet_name = page_map[selected_page]
 
-# VERİ OKUMA VE ÖN İŞLEME
-try:
-    df = conn.read(worksheet=selected_page, ttl=0)
-    # Boş liste hatasını önlemek için
-    if df.empty:
-        df = pd.DataFrame(columns=['kayit_yapan', 'police_no', 'musteri_adi', 'police_turu', 'brut_prim', 'net_komisyon', 'tanzim_tarihi', 'bitis_tarihi', 'telefon'])
-    else:
-        df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'], errors='coerce')
-        df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'], errors='coerce')
-except:
-    df = pd.DataFrame(columns=['kayit_yapan', 'police_no', 'musteri_adi', 'police_turu', 'brut_prim', 'net_komisyon', 'tanzim_tarihi', 'bitis_tarihi', 'telefon'])
+def load_data():
+    try:
+        raw_df = conn.read(worksheet=worksheet_name, ttl=0)
+        if raw_df is None or raw_df.empty:
+            return pd.DataFrame()
+        
+        # SÜTUN İSİMLERİNİ STANDARTLAŞTIR (Hata Önleyici)
+        # Hepsini küçük harf yap, boşlukları alt tireye çevir
+        raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
+        
+        # Tarih sütunlarını güvenli dönüştür
+        for col in ['tanzim_tarihi', 'bitis_tarihi', 'baslangic_tarihi']:
+            if col in raw_df.columns:
+                raw_df[col] = pd.to_datetime(raw_df[col], errors='coerce')
+        
+        # Sayısal sütunları güvenli dönüştür
+        for col in ['brut_prim', 'net_komisyon']:
+            if col in raw_df.columns:
+                raw_df[col] = pd.to_numeric(raw_df[col], errors='coerce').fillna(0)
+                
+        return raw_df
+    except Exception as e:
+        st.error(f"Veri okunurken hata oluştu: {e}")
+        return pd.DataFrame()
 
-# MENÜ
+df = load_data()
+
+# SIDEBAR MENÜ
+st.sidebar.markdown(f"👤 Yetkili: **{st.session_state.username.upper()}**")
 menu_icons = {"📝 Yeni Poliçe": "kaydet", "🔎 Poliçe Takibi": "takip", "📊 Finansal Analiz": "rapor", "🔔 Vade Takip": "vade"}
 choice_label = st.sidebar.radio("⚙️ İşlem Merkezi", list(menu_icons.keys()))
 choice = menu_icons[choice_label]
 
 if st.sidebar.button("🔴 Çıkış Yap"):
     st.session_state.authenticated = False
-    st.session_state.role = None
     st.rerun()
 
 # --- SAYFALAR ---
@@ -106,47 +117,56 @@ if choice == "kaydet":
                     "police_turu": brans, "brut_prim": prim, "net_komisyon": kazanc,
                     "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), "telefon": tel
                 }])
+                
+                # Mevcut veriye ekle
                 updated_df = pd.concat([df, new_row], ignore_index=True)
-                conn.update(worksheet=selected_page, data=updated_df)
-                st.success("Başarıyla kaydedildi!")
+                conn.update(worksheet=worksheet_name, data=updated_df)
+                st.success("Kayıt Başarılı!")
                 st.rerun()
-            else:
-                st.error("Lütfen tüm alanları doldurun!")
 
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takibi")
     
-    # SADECE ADMİN İÇİN SİLME PANELİ
-    if st.session_state.get("role") == "admin":
-        with st.expander("🗑️ Yönetici Paneli: Kayıt Silme", expanded=False):
-            st.warning("Buradan silinen veriler doğrudan Google Tablolar'dan kaldırılır.")
-            if not df.empty:
-                delete_no = st.selectbox("Silinecek Poliçe No", ["Seçiniz..."] + sorted(df['police_no'].astype(str).unique().tolist()))
-                if st.button("❌ POLİÇEYİ SİL", type="primary"):
-                    if delete_no != "Seçiniz...":
-                        new_df = df[df['police_no'].astype(str) != delete_no]
-                        conn.update(worksheet=selected_page, data=new_df)
-                        st.success(f"{delete_no} nolu kayıt silindi.")
-                        st.rerun()
-            else:
-                st.write("Silinecek kayıt yok.")
+    if st.session_state.get("role") == "admin" and not df.empty:
+        with st.expander("🗑️ Kayıt Sil (Admin)", expanded=False):
+            delete_no = st.selectbox("Silinecek No", ["Seçiniz..."] + df['police_no'].astype(str).tolist())
+            if st.button("❌ SİL") and delete_no != "Seçiniz...":
+                new_df = df[df['police_no'].astype(str) != delete_no]
+                conn.update(worksheet=worksheet_name, data=new_df)
+                st.success("Silindi!")
+                st.rerun()
 
-    # ARAMA VE LİSTELEME
-    search = st.text_input("🔍 İsim veya No ile Ara")
+    search = st.text_input("🔍 Hızlı Arama")
     if not df.empty:
-        # Arama filtresi
-        f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False, na=False)).any(axis=1)] if search else df
-        
-        st.dataframe(
-            f_df.sort_values('tanzim_tarihi', ascending=False),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "tanzim_tarihi": st.column_config.DateColumn("Tanzim"),
-                "bitis_tarihi": st.column_config.DateColumn("Vade"),
-                "brut_prim": st.column_config.NumberColumn("Prim", format="%.2f TL"),
-                "net_komisyon": st.column_config.NumberColumn("Komisyon", format="%.2f TL")
-            }
-        )
+        f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)] if search else df
+        st.dataframe(f_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Gösterilecek veri bulunamadı.")
 
-# ... Rapor ve Vade bölümleri için de benzer kontroller eklendi ...
+elif choice == "rapor":
+    st.subheader("📊 Finansal Analiz")
+    if not df.empty and 'net_komisyon' in df.columns:
+        m1, m2 = st.columns(2)
+        m1.metric("Toplam Prim", f"{df['brut_prim'].sum():,.2f} TL")
+        m2.metric("Toplam Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
+        
+        fig = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Analiz için veri bulunamadı.")
+
+elif choice == "vade":
+    st.subheader("🔔 Vade Takip")
+    if not df.empty and 'bitis_tarihi' in df.columns:
+        bugun = pd.Timestamp(datetime.now().date())
+        # Boş tarihleri temizle
+        v_df = df.dropna(subset=['bitis_tarihi']).copy()
+        v_df['kalan'] = (v_df['bitis_tarihi'] - bugun).dt.days
+        yaklasan = v_df[v_df['kalan'] <= 30].sort_values('kalan')
+        
+        if not yaklasan.empty:
+            st.write(yaklasan[['police_no', 'musteri_adi', 'bitis_tarihi', 'kalan']])
+        else:
+            st.success("Yakın zamanda vadesi dolacak poliçe yok.")
+    else:
+        st.info("Vade takibi için geçerli veri yok.")
