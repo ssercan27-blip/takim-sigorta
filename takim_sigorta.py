@@ -4,7 +4,6 @@ import pandas as pd
 import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import urllib.parse
 import plotly.express as px
 
 # Sayfa Ayarları
@@ -16,11 +15,14 @@ USER_CREDENTIALS = {
     "admin": ["admin44", "admin"]
 }
 
-# --- KOMİSYON SÖZLÜĞÜ ---
+# --- AYARLAR VE LİSTELER ---
 KOMISYON_SOZLUGU = {
     "Trafik": 6.50, "Kasko": 9.50, "Konut": 20.00, "İşyeri": 12.00,
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
+
+# Şirket listesini buraya istediğin gibi ekleyebilirsin
+SIRKET_LISTESI = ["Türkiye Sigorta", "Axa Sigorta", "Allianz", "Sompo Sigorta", "Anadolu Sigorta", "Quick Sigorta", "Bereket Sigorta", "Diğer"]
 
 # 1. OTURUM DURUMU
 if "authenticated" not in st.session_state:
@@ -54,7 +56,6 @@ def load_data():
         raw_df = conn.read(worksheet=WORKSHEET_NAME, ttl=0)
         if raw_df is None or raw_df.empty: return pd.DataFrame()
         raw_df.columns = [str(c).strip().lower().replace(" ", "_") for c in raw_df.columns]
-        # Tüm tarih sütunlarını tanı
         tarih_sutunlari = ['tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi']
         for col in tarih_sutunlari:
             if col in raw_df.columns:
@@ -66,7 +67,6 @@ def load_data():
 df = load_data()
 
 # --- SIDEBAR (LOGO VE MENÜ) ---
-# Logo dosyasının adını kontrol et (logo.jpg veya logo.png hangisiyse ona göre ayarla)
 if os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
 elif os.path.exists("logo.png"):
@@ -92,29 +92,28 @@ if choice == "kaydet":
         musteri = c1.text_input("👤 Müşteri Adı Soyadı")
         tel = c2.text_input("📱 Telefon")
         
-        c3, c4 = st.columns(2)
-        brans = c3.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
-        prim = c4.number_input("💰 Brüt Prim (TL)", min_value=0.0)
+        c3, c4, c5 = st.columns(3)
+        sirket = c3.selectbox("🏢 Sigorta Şirketi", SIRKET_LISTESI) # YENİ ALAN
+        brans = c4.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
+        prim = c5.number_input("💰 Brüt Prim (TL)", min_value=0.0)
         
         st.divider()
         t1, t2, t3 = st.columns(3)
-        # GÜN.AY.YIL FORMATLI TAKVİMLER
         tanzim = t1.date_input("📅 Tanzim Tarihi", datetime.now(), format="DD/MM/YYYY")
         baslangic = t2.date_input("🚀 Başlangıç Tarihi", datetime.now(), format="DD/MM/YYYY")
         sure = t3.selectbox("⏳ Süre", ["1 Yıllık", "2 Aylık"])
         
         bitis_tarihi = baslangic + (relativedelta(years=1) if sure == "1 Yıllık" else relativedelta(months=2))
-        st.info(f"🏁 Otomatik Hesaplanan Vade Sonu: **{bitis_tarihi.strftime('%d.%m.%Y')}**")
+        st.info(f"🏁 Vade Sonu: **{bitis_tarihi.strftime('%d.%m.%Y')}**")
         
         if st.form_submit_button("✅ SİSTEME KAYDET"):
             if all([p_no, musteri, tel, prim > 0]):
                 kazanc = prim * (KOMISYON_SOZLUGU[brans] / 100)
                 new_row = pd.DataFrame([{
-                    "kayit_yapan": st.session_state.username, "police_no": str(p_no), "musteri_adi": musteri,
-                    "police_turu": brans, "brut_prim": prim, "net_komisyon": kazanc,
-                    "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), 
-                    "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
-                    "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), 
+                    "kayit_yapan": st.session_state.username, "police_no": str(p_no), 
+                    "musteri_adi": musteri, "sigorta_sirketi": sirket, "police_turu": brans, 
+                    "brut_prim": prim, "net_komisyon": kazanc, "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), 
+                    "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"), "bitis_tarihi": bitis_tarihi.strftime("%Y-%m-%d"), 
                     "telefon": tel
                 }])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
@@ -124,26 +123,21 @@ if choice == "kaydet":
 
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takibi ve Yönetimi")
-    
     if not df.empty:
-        # DÜZENLEME / SİLME
         with st.expander("🛠️ Kayıt Düzenle veya Sil", expanded=False):
             secilen_no = st.selectbox("İşlem yapılacak Poliçe", ["Seçiniz..."] + sorted(df['police_no'].astype(str).unique().tolist()))
             if secilen_no != "Seçiniz...":
                 idx = df[df['police_no'].astype(str) == secilen_no].index[0]
                 row = df.loc[idx]
-                
                 with st.form("duzenleme_formu"):
                     u_musteri = st.text_input("Müşteri", value=str(row['musteri_adi']))
+                    u_sirket = st.selectbox("Şirket", SIRKET_LISTESI, index=SIRKET_LISTESI.index(row['sigorta_sirketi']) if 'sigorta_sirketi' in row and row['sigorta_sirketi'] in SIRKET_LISTESI else 0)
                     u_prim = st.number_input("Prim", value=float(row['brut_prim']))
-                    # Başlangıç tarihini düzenleme için de ekledim
-                    u_basl = st.date_input("Başlangıç Tarihi", value=row['baslangic_tarihi'] if pd.notnull(row['baslangic_tarihi']) else datetime.now(), format="DD/MM/YYYY")
-                    
                     c1, c2 = st.columns(2)
                     if c1.form_submit_button("💾 GÜNCELLE"):
                         df.at[idx, 'musteri_adi'] = u_musteri
+                        df.at[idx, 'sigorta_sirketi'] = u_sirket
                         df.at[idx, 'brut_prim'] = u_prim
-                        df.at[idx, 'baslangic_tarihi'] = u_basl
                         conn.update(worksheet=WORKSHEET_NAME, data=df)
                         st.success("Güncellendi!")
                         st.rerun()
@@ -153,10 +147,8 @@ elif choice == "takip":
                         st.success("Silindi!")
                         st.rerun()
 
-        # LİSTELEME
         search = st.text_input("🔍 Hızlı Ara")
         f_df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)] if search else df
-        
         st.dataframe(
             f_df.sort_values('tanzim_tarihi', ascending=False),
             use_container_width=True, hide_index=True,
@@ -164,19 +156,25 @@ elif choice == "takip":
                 "tanzim_tarihi": st.column_config.DateColumn("Tanzim", format="DD.MM.YYYY"),
                 "baslangic_tarihi": st.column_config.DateColumn("Başlangıç", format="DD.MM.YYYY"),
                 "bitis_tarihi": st.column_config.DateColumn("Vade Sonu", format="DD.MM.YYYY"),
+                "sigorta_sirketi": "Şirket",
                 "brut_prim": st.column_config.NumberColumn("Prim", format="%.2f TL")
             }
         )
 
-# Analiz ve Vade bölümleri için de tarih/sütun kontrollerini korudum.
+# Analiz sayfasında şirket bazlı raporlama
 elif choice == "rapor":
     st.subheader("📊 Finansal Analiz")
     if not df.empty:
         m1, m2 = st.columns(2)
         m1.metric("Toplam Prim", f"{df['brut_prim'].sum():,.2f} TL")
         m2.metric("Toplam Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
-        fig = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı")
-        st.plotly_chart(fig, use_container_width=True)
+        
+        c1, c2 = st.columns(2)
+        fig1 = px.pie(df, values='net_komisyon', names='police_turu', title="Branş Dağılımı")
+        c1.plotly_chart(fig1, use_container_width=True)
+        
+        fig2 = px.bar(df, x='sigorta_sirketi', y='brut_prim', title="Şirket Bazlı Üretim", color='sigorta_sirketi')
+        c2.plotly_chart(fig2, use_container_width=True)
 
 elif choice == "vade":
     st.subheader("🔔 Vade Takip")
@@ -186,4 +184,4 @@ elif choice == "vade":
         v_df['kalan'] = (v_df['bitis_tarihi'] - bugun).dt.days
         yaklasan = v_df[v_df['kalan'] <= 30].sort_values('kalan')
         if not yaklasan.empty:
-            st.dataframe(yaklasan[['police_no', 'musteri_adi', 'bitis_tarihi', 'kalan']], use_container_width=True, hide_index=True)
+            st.dataframe(yaklasan[['police_no', 'musteri_adi', 'sigorta_sirketi', 'bitis_tarihi', 'kalan']], use_container_width=True, hide_index=True)
