@@ -2,10 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Sayfa Ayarları
-st.set_page_config(page_title="Takim Sigorta - Yönetim Paneli", layout="wide")
+st.set_page_config(page_title="Takim Sigorta - Vade Takip Sistemi", layout="wide")
 
 # --- KOMİSYON ORANLARI ---
 KOMISYON_SOZLUGU = {
@@ -13,13 +13,12 @@ KOMISYON_SOZLUGU = {
     "DASK": 9.75, "TSS": 16.25, "Yol yardım": 16.25, "Mali Sorumluluk": 6.50, "Diğer": 10.00
 }
 
-# 1. LOGO VE GÖRSEL DÜZEN
+# 1. LOGO VE GİRİŞ (Hızlı Geçiş)
 if os.path.exists("logo.jpg"):
     st.sidebar.image("logo.jpg", use_container_width=True)
 else:
     st.sidebar.markdown("<h2 style='text-align: center; color: #cc0000;'>🛡️ TAKİM SİGORTA</h2>", unsafe_allow_html=True)
 
-# 2. KULLANICI GİRİŞİ
 USER_CREDENTIALS = {"sercan": "takim2026", "admin": "admin44"}
 
 def check_password():
@@ -44,31 +43,17 @@ def check_password():
 if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # --- YENİLENEN İŞLEM MERKEZİ (SIDEBAR) ---
+    # --- İŞLEM MERKEZİ ---
     st.sidebar.divider()
     st.sidebar.markdown(f"👤 Yetkili: **{st.session_state.username.upper()}**")
     
-    st.sidebar.subheader("📂 Veri Yönetimi")
-    # Sayfa isimlerini daha anlamlı hale getirdik (İstersen bunları Branşlara göre de ayırabiliriz)
-    page_map = {
-        "Ana Portföy": "Sayfa1",
-        "Ek Kayıtlar": "Sayfa2",
-        "Arşiv": "Sayfa3",
-        "Özel Dosyalar": "Sayfa4"
-    }
-    selected_display_name = st.sidebar.selectbox("Çalışma Alanı Seçin", list(page_map.keys()))
+    page_map = {"Ana Portföy": "Sayfa1", "Ek Kayıtlar": "Sayfa2", "Arşiv": "Sayfa3"}
+    selected_display_name = st.sidebar.selectbox("Çalışma Alanı", list(page_map.keys()))
     selected_page = page_map[selected_display_name]
     
-    st.sidebar.divider()
-    st.sidebar.subheader("⚙️ Menü")
-    menu = {
-        "➕ Poliçe Kaydet": "kaydet",
-        "📊 Finansal Rapor": "rapor"
-    }
-    choice_label = st.sidebar.radio("Yapılacak İşlem", list(menu.keys()))
-    choice = menu[choice_label]
+    menu = {"➕ Poliçe Kaydet": "kaydet", "📊 Finansal Rapor & Vade": "rapor"}
+    choice = menu[st.sidebar.radio("Menü", list(menu.keys()))]
     
-    st.sidebar.divider()
     if st.sidebar.button("🔴 Güvenli Çıkış", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
@@ -76,67 +61,75 @@ if check_password():
     # --- VERİ OKUMA ---
     try:
         df = conn.read(worksheet=selected_page, ttl=0)
+        # Tarih sütunlarını datetime formatına çevir
+        df['tanzim_tarihi'] = pd.to_datetime(df['tanzim_tarihi'])
+        df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'])
+        df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'])
     except:
-        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi'])
+        df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi'])
 
-    # --- ANA EKRAN ---
     if choice == "kaydet":
         st.markdown(f"### 📋 {selected_display_name} / Yeni Poliçe Girişi")
         with st.form("kayit_formu", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
                 musteri_adi = st.text_input("👤 Müşteri Adı Soyadı")
-                police_turu = st.selectbox("📑 Branş / Poliçe Türü", list(KOMISYON_SOZLUGU.keys()))
+                police_turu = st.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
             with c2:
-                kaynak = st.radio("📡 Poliçe Kaynağı", ["Öz Portföy", "Dış Acente"], horizontal=True)
+                kaynak = st.radio("📡 Kaynak", ["Öz Portföy", "Dış Acente"], horizontal=True)
                 brut_prim = st.number_input("💰 Brüt Prim (TL)", min_value=0.0, step=500.0)
             
             st.divider()
-            t1, t2 = st.columns(2)
+            t1, t2, t3 = st.columns(3)
             with t1:
-                tanzim_tarihi = st.date_input("📅 Tanzim Tarihi", value=datetime.now())
+                tanzim = st.date_input("📅 Tanzim", value=datetime.now())
             with t2:
-                baslangic_tarihi = st.date_input("🚀 Başlangıç Tarihi", value=datetime.now())
+                baslangic = st.date_input("🚀 Başlangıç", value=datetime.now())
+            with t3:
+                # Otomatik 1 yıl sonrası bitiş tarihi
+                varsayilan_bitis = baslangic + timedelta(days=365)
+                bitis = st.date_input("🏁 Bitiş (Vade)", value=varsayilan_bitis)
             
-            st.write("")
-            submit = st.form_submit_button("✅ HESAPLA VE TABLOYA İŞLE", use_container_width=True)
-            
-            if submit:
+            if st.form_submit_button("✅ HESAPLA VE KAYDET", use_container_width=True):
                 if musteri_adi:
                     ana_oran = KOMISYON_SOZLUGU[police_turu]
-                    uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
-                    net_komisyon = brut_prim * (uygulanan_oran / 100)
+                    uyg_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
+                    komisyon = brut_prim * (uyg_oran / 100)
                     
-                    new_data = pd.DataFrame([{
-                        "kayit_yapan": st.session_state.username,
-                        "musteri_adi": musteri_adi,
-                        "police_turu": police_turu,
-                        "kaynak": kaynak,
-                        "brut_prim": brut_prim,
-                        "oran": f"%{uygulanan_oran:.2f}",
-                        "net_komisyon": net_komisyon,
-                        "tanzim_tarihi": tanzim_tarihi.strftime("%Y-%m-%d"),
-                        "baslangic_tarihi": baslangic_tarihi.strftime("%Y-%m-%d")
+                    new_row = pd.DataFrame([{
+                        "kayit_yapan": st.session_state.username, "musteri_adi": musteri_adi,
+                        "police_turu": police_turu, "kaynak": kaynak, "brut_prim": brut_prim,
+                        "oran": f"%{uyg_oran:.2f}", "net_komisyon": komisyon,
+                        "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"),
+                        "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
+                        "bitis_tarihi": bitis.strftime("%Y-%m-%d")
                     }])
                     
-                    updated_df = pd.concat([df, new_data], ignore_index=True)
+                    updated_df = pd.concat([df, new_row], ignore_index=True)
                     conn.update(worksheet=selected_page, data=updated_df)
-                    st.success(f"Kayıt Başarılı! Net Komisyon: {net_komisyon:,.2f} TL")
+                    st.success(f"Kayıt Tamamlandı! Net Kazanç: {komisyon:,.2f} TL")
                     st.balloons()
-                else:
-                    st.error("Hata: Müşteri adı boş bırakılamaz!")
 
     elif choice == "rapor":
-        st.markdown(f"### 📊 {selected_display_name} / Finansal Durum")
+        st.markdown(f"### 📊 {selected_display_name} / Durum Analizi")
+        
         if not df.empty:
-            display_df = df if st.session_state.username in ["sercan", "admin"] else df[df['kayit_yapan'] == st.session_state.username]
+            # --- VADE TAKİP ALANI ---
+            bugun = pd.Timestamp(datetime.now().date())
+            df['kalan_gun'] = (df['bitis_tarihi'] - bugun).dt.days
             
+            vadesi_yaklasanlar = df[(df['kalan_gun'] <= 30) & (df['kalan_gun'] >= 0)]
+            
+            if not vadesi_yaklasanlar.empty:
+                st.warning(f"⚠️ Dikkat: Önümüzdeki 30 gün içinde süresi dolacak {len(vadesi_yaklasanlar)} adet poliçe var!")
+                st.dataframe(vadesi_yaklasanlar[['musteri_adi', 'police_turu', 'bitis_tarihi', 'kalan_gun']], use_container_width=True)
+                st.divider()
+
+            # Özet Metrikler
             m1, m2, m3 = st.columns(3)
-            m1.metric("Toplam Brüt Prim", f"{display_df['brut_prim'].sum():,.2f} TL")
-            m2.metric("Toplam Net Komisyon", f"{display_df['net_komisyon'].sum():,.2f} TL")
-            m3.metric("Poliçe Adedi", len(display_df))
+            m1.metric("Toplam Ciro", f"{df['brut_prim'].sum():,.2f} TL")
+            m2.metric("Net Komisyon", f"{df['net_komisyon'].sum():,.2f} TL")
+            m3.metric("Poliçe Sayısı", len(df))
             
             st.divider()
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("Bu alanda henüz bir kayıt bulunamadı.")
+            st.dataframe(df, use_container_width=True)
