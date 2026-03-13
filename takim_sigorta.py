@@ -70,7 +70,8 @@ try:
     df['baslangic_tarihi'] = pd.to_datetime(df['baslangic_tarihi'], errors='coerce')
     df['bitis_tarihi'] = pd.to_datetime(df['bitis_tarihi'], errors='coerce')
 except:
-    df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi', 'telefon'])
+    # Eğer sütunlar yoksa başlangıç sütunlarını oluşturuyoruz (police_no eklendi)
+    df = pd.DataFrame(columns=['kayit_yapan', 'police_no', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'tanzim_tarihi', 'baslangic_tarihi', 'bitis_tarihi', 'telefon'])
 
 # --- SAYFA İÇERİKLERİ ---
 
@@ -78,11 +79,12 @@ if choice == "kaydet":
     st.subheader("📝 Yeni Poliçe Kaydı")
     with st.form("yeni_kayit", clear_on_submit=True):
         c1, c2 = st.columns(2)
-        musteri = c1.text_input("👤 Müşteri Adı Soyadı")
-        tel = c2.text_input("📱 Telefon (Örn: 90530...)")
-        brans = c1.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
-        kaynak = c2.radio("📡 Kaynak", ["Öz Portföy", "Dış Acente"], horizontal=True)
-        prim = c1.number_input("💰 Brüt Prim (TL)", min_value=0.0, step=500.0)
+        p_no = c1.text_input("🔢 Poliçe Numarası")
+        musteri = c2.text_input("👤 Müşteri Adı Soyadı")
+        tel = c1.text_input("📱 Telefon (Örn: 90530...)")
+        brans = c2.selectbox("📑 Branş", list(KOMISYON_SOZLUGU.keys()))
+        kaynak = c1.radio("📡 Kaynak", ["Öz Portföy", "Dış Acente"], horizontal=True)
+        prim = c2.number_input("💰 Brüt Prim (TL)", min_value=0.0, step=500.0)
         
         t1, t2, t3 = st.columns(3)
         tanzim = t1.date_input("📅 Tanzim", datetime.now())
@@ -90,37 +92,37 @@ if choice == "kaydet":
         bitis = t3.date_input("🏁 Bitiş", baslangic + timedelta(days=365))
         
         if st.form_submit_button("✅ Kaydet"):
-            if musteri and tel:
+            if musteri and p_no:
                 oran = KOMISYON_SOZLUGU[brans]
                 uyg_oran = oran / 2 if kaynak == "Dış Acente" else oran
                 kazanc = prim * (uyg_oran / 100)
                 
                 new_row = pd.DataFrame([{
-                    "kayit_yapan": st.session_state.username, "musteri_adi": musteri, "police_turu": brans,
+                    "kayit_yapan": st.session_state.username, "police_no": p_no, "musteri_adi": musteri, "police_turu": brans,
                     "kaynak": kaynak, "brut_prim": prim, "oran": f"%{uyg_oran:.2f}", "net_komisyon": kazanc,
                     "tanzim_tarihi": tanzim.strftime("%Y-%m-%d"), "baslangic_tarihi": baslangic.strftime("%Y-%m-%d"),
                     "bitis_tarihi": bitis.strftime("%Y-%m-%d"), "telefon": tel
                 }])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(worksheet=selected_page, data=updated_df)
-                st.success("Kayıt Başarılı!")
+                st.success(f"Poliçe {p_no} başarıyla kaydedildi!")
                 st.rerun()
             else:
-                st.warning("Lütfen isim ve telefon bilgilerini doldurun.")
+                st.warning("Lütfen Poliçe No ve Müşteri Adı alanlarını doldurun.")
 
 elif choice == "takip":
     st.subheader("🔎 Poliçe Takip ve Arama")
     if not df.empty:
         with st.expander("🔍 Arama Filtreleri", expanded=True):
             f1, f2, f3 = st.columns(3)
-            search_name = f1.text_input("Müşteri Adı")
-            search_brans = f2.multiselect("Branş", options=df['police_turu'].unique())
-            search_source = f3.multiselect("Kaynak", options=df['kaynak'].unique())
+            search_no = f1.text_input("Poliçe No Ara")
+            search_name = f2.text_input("Müşteri Adı")
+            search_brans = f3.multiselect("Branş", options=df['police_turu'].unique())
         
         filtered = df.copy()
+        if search_no: filtered = filtered[filtered['police_no'].astype(str).str.contains(search_no, case=False, na=False)]
         if search_name: filtered = filtered[filtered['musteri_adi'].str.contains(search_name, case=False, na=False)]
         if search_brans: filtered = filtered[filtered['police_turu'].isin(search_brans)]
-        if search_source: filtered = filtered[filtered['kaynak'].isin(search_source)]
         
         st.dataframe(filtered.sort_values('tanzim_tarihi', ascending=False), use_container_width=True, hide_index=True)
     else: st.info("Henüz poliçe kaydı bulunmuyor.")
@@ -153,7 +155,7 @@ elif choice == "cari":
         if secilen != "Seçiniz...":
             m_df = df[df['benzersiz_musteri'] == secilen]
             st.info(f"**Toplam Kazanç:** {m_df['net_komisyon'].sum():,.2f} TL | **Poliçe Sayısı:** {len(m_df)}")
-            st.dataframe(m_df[['police_turu', 'brut_prim', 'tanzim_tarihi', 'bitis_tarihi']], use_container_width=True, hide_index=True)
+            st.dataframe(m_df[['police_no', 'police_turu', 'brut_prim', 'tanzim_tarihi', 'bitis_tarihi']], use_container_width=True, hide_index=True)
     else: st.info("Henüz kayıtlı müşteri bulunmuyor.")
 
 elif choice == "vade":
@@ -169,11 +171,12 @@ elif choice == "vade":
                     col1, col2 = st.columns([3, 1])
                     durum = "🔴" if row['kalan_gun'] < 0 else "🟠"
                     col1.markdown(f"### {durum} {row['musteri_adi']}")
+                    col1.write(f"**Poliçe No:** {row['police_no']} | **Branş:** {row['police_turu']}")
                     col1.write(f"**Vade:** {row['bitis_tarihi'].strftime('%d.%m.%Y')} ({row['kalan_gun']} gün kaldı)")
                     
                     tel = str(row['telefon']).strip()
                     if not tel.startswith('90') and len(tel) > 0: tel = "90" + (tel[1:] if tel.startswith('0') else tel)
-                    msg = f"Sayın {row['musteri_adi']}, Takim Sigorta'dan hatırlatırız: {row['police_turu']} poliçe vadeniz dolmaktadır."
+                    msg = f"Sayın {row['musteri_adi']}, Takim Sigorta'dan hatırlatırız: {row['police_no']} nolu {row['police_turu']} poliçe vadeniz dolmaktadır."
                     wa_url = f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
                     col2.link_button("💬 Hatırlat", wa_url, use_container_width=True)
         else: st.success("Yakın zamanda vadesi dolacak poliçe yok.")
