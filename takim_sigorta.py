@@ -82,7 +82,7 @@ if choice == "📝 Yeni Poliçe":
         brans = c4.selectbox("Branş", ["TRAFİK", "KASKO", "DASK", "TSS", "KONUT", "İŞYERİ", "DİĞER"])
         plaka = c5.text_input("Plaka / TC No")
 
-        # Tikleme (SÜRE)
+        # Tikleme (SÜRE HESABI)
         is_two_months = st.checkbox("Bu bir 2 Aylık Poliçedir")
         
         c6, c7 = st.columns(2)
@@ -95,21 +95,31 @@ if choice == "📝 Yeni Poliçe":
         tel = st.text_input("WhatsApp (5xxxxxxxxx)")
         
         if st.form_submit_button("✅ SİSTEME KAYDET"):
-            # Vade Hesaplama
+            # Vade Hesaplama: Tikliyse 2 ay, değilse 1 yıl ekle
             bitis = basla + relativedelta(months=2) if is_two_months else basla + relativedelta(years=1)
             
+            # Veriyi TR formatında (GG.AA.YYYY) hazırla
             new_row = pd.DataFrame([{
-                "police_no": p_no, "müşteri_adı": m_adi.upper(), "sigorta_sirketi": sirket, 
-                "poliçe_türü": brans, "plaka_tc": plaka.upper(), "telefon": tel, 
+                "police_no": p_no, 
+                "müşteri_adı": m_adi.upper(), 
+                "sigorta_sirketi": sirket, 
+                "poliçe_türü": brans, 
+                "plaka_tc": plaka.upper(), 
+                "telefon": tel, 
                 "tanzim_tarihi": tanzim.strftime("%d.%m.%Y"), 
                 "başlangıç_tarihi": basla.strftime("%d.%m.%Y"), 
                 "bitiş_tarihi": bitis.strftime("%d.%m.%Y"), 
-                "toplam_tutar": t_tutar, "alinan_ucret": a_ucret, 
-                "arsiv": "FALSE", "kayıt_yapan": st.session_state.username
+                "toplam_tutar": t_tutar, 
+                "alinan_ucret": a_ucret, 
+                "arsiv": "FALSE", 
+                "kayıt_yapan": st.session_state.username
             }])
+            
+            # Google Sheets'e gönder
             conn.update(worksheet="Sayfa1", data=pd.concat([df, new_row], ignore_index=True))
-            st.success("Kayıt TR Formatında Eklendi!"); st.rerun()
-
+            st.success(f"Kayıt Eklendi! Vade Tarihi: {bitis.strftime('%d.%m.%Y')}")
+            st.rerun()
+            
 # --- POLİÇE TAKİBİ ---
 elif choice == "🔎 Poliçe Takibi":
     st.subheader("🔎 Aktif Poliçeler")
@@ -153,4 +163,5 @@ elif choice == "🔐 Yönetici Paneli":
 
 if st.sidebar.button("🔴 Çıkış"):
     st.session_state.clear(); st.rerun()
+
 
