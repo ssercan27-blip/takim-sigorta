@@ -52,6 +52,7 @@ if check_password():
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     st.sidebar.title("📌 İşlem Merkezi")
+    # Sayfa seçimi gizli kalsın ama işlevini yapsın
     selected_page = st.sidebar.selectbox("Çalışılacak Sayfa", ["Sayfa1", "Sayfa2", "Sayfa3", "Sayfa4"])
     menu = ["Poliçe Kaydet", "Finansal Rapor"]
     choice = st.sidebar.radio("Menü", menu)
@@ -67,7 +68,8 @@ if check_password():
         df = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'kaynak', 'brut_prim', 'oran', 'net_komisyon', 'vade_tarihi'])
 
     if choice == "Poliçe Kaydet":
-        st.header(f"📝 {selected_page} - Yeni Kayıt")
+        # BAŞLIK DÜZELTİLDİ: Artık teknik sayfa ismi yazmıyor
+        st.header("📝 Yeni Poliçe Kaydı")
         with st.form("kayit_formu", clear_on_submit=True):
             musteri_adi = st.text_input("Müşteri Adı Soyadı")
             police_turu = st.selectbox("Branş / Poliçe Türü", list(KOMISYON_SOZLUGU.keys()))
@@ -79,7 +81,6 @@ if check_password():
             
             if submit:
                 if musteri_adi:
-                    # KOMİSYON HESABI (Hata Düzeltildi)
                     ana_oran = KOMISYON_SOZLUGU[police_turu]
                     uygulanan_oran = ana_oran / 2 if kaynak == "Dış Acente" else ana_oran
                     net_komisyon = brut_prim * (uygulanan_oran / 100)
@@ -103,7 +104,8 @@ if check_password():
                     st.error("Lütfen müşteri adını giriniz.")
 
     elif choice == "Finansal Rapor":
-        st.header(f"🔍 {selected_page} Özeti")
+        # BAŞLIK DÜZELTİLDİ
+        st.header("🔍 Finansal Özet Raporu")
         if not df.empty:
             display_df = df if st.session_state.username in ["sercan", "admin"] else df[df['kayit_yapan'] == st.session_state.username]
             c1, c2 = st.columns(2)
