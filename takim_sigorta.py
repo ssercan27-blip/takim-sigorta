@@ -1,19 +1,19 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import os
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Takim Sigorta Giriş", layout="centered")
 
-# 1. LOGO VE GÖRSEL DÜZENLEME (Logoyu burada kalıcı hale getiriyoruz)
-# Not: Logonun GitHub'da 'logo.jpg' adıyla kayıtlı olduğundan emin ol
-try:
-    st.image("logo.jpg", width=200)
-except:
+# 1. LOGO VE GÖRSEL DÜZENLEME
+# Dosya adını tam olarak senin belirttiğin gibi güncelledim
+if os.path.exists("image_0.png.jpg"):
+    st.image("image_0.png.jpg", width=200)
+else:
     st.title("🛡️ TAKİM SİGORTA")
 
-# 2. KULLANICI GİRİŞ SİSTEMİ (Basit ve Etkili)
-# Buradaki isimleri ve şifreleri istediğin gibi değiştirebilirsin
+# 2. KULLANICI GİRİŞ SİSTEMİ
 USER_CREDENTIALS = {
     "sercan": "takim2026",
     "personel1": "sigorta123",
@@ -21,7 +21,6 @@ USER_CREDENTIALS = {
 }
 
 def check_password():
-    """Kullanıcı adı ve şifre kontrolü yapar."""
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -40,16 +39,13 @@ def check_password():
     return True
 
 if check_password():
-    # 3. VERİTABANI BAĞLANTISI
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Mevcut verileri oku
     try:
         existing_data = conn.read(worksheet="Sheet1", ttl=0)
     except:
         existing_data = pd.DataFrame(columns=['kayit_yapan', 'musteri_adi', 'police_turu', 'vade_tarihi', 'tutar'])
 
-    # Giriş yapan personelin ismini sağ üstte göster
     st.sidebar.success(f"Hoş geldin, {st.session_state.username.capitalize()}")
     if st.sidebar.button("Güvenli Çıkış"):
         st.session_state.authenticated = False
@@ -81,7 +77,7 @@ if check_password():
                     }])
                     updated_df = pd.concat([existing_data, new_row], ignore_index=True)
                     conn.update(worksheet="Sheet1", data=updated_df)
-                    st.success("Kayıt başarıyla eklendi!")
+                    st.success("Kayıt başarıyla Google Tablo'ya eklendi!")
                 else:
                     st.error("Müşteri adı boş bırakılamaz.")
 
@@ -90,7 +86,6 @@ if check_password():
         data = conn.read(worksheet="Sheet1", ttl=0)
         
         if not data.empty:
-            # Sadece giriş yapan kullanıcının verilerini filtrele
             user_data = data[data['kayit_yapan'] == st.session_state.username]
             if not user_data.empty:
                 st.dataframe(user_data, use_container_width=True)
