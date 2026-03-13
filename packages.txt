@@ -1,1 +1,1 @@
-libsqlite3-dev
+pysqlite3
