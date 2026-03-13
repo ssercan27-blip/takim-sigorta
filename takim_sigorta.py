@@ -20,14 +20,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data_safe():
     try:
-        df = conn.read(worksheet="Sayfa1", ttl=0)
-        if df is None or df.empty: return pd.DataFrame()
-        # SÜTUNLARI STANDARTLAŞTIR (Boşlukları sil, küçük harf yap)
-        df.columns = [str(c).strip().lower().replace(" ", "_").replace("/", "_") for c in df.columns]
-        # VERİ TEMİZLİĞİ: 'arsiv' sütunundaki boşlukları temizle
-        if 'arsiv' in df.columns:
-            df['arsiv'] = df['arsiv'].astype(str).str.strip().str.upper()
+        # ... içerideki kodlar ...
         return df
+    except:
+        return pd.DataFrame()
     except:
         return pd.DataFrame()
 
@@ -153,3 +149,4 @@ elif choice == "🔐 Yönetici Paneli":
 
 if st.sidebar.button("🔴 Çıkış"):
     st.session_state.clear(); st.rerun()
+
